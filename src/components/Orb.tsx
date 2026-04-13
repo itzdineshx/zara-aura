@@ -92,7 +92,7 @@ const Orb = ({ state, audioStream }: OrbProps) => {
       return { bass: 0, mid: 0, high: 0, overall: 0 };
     }
     const data = dataArrayRef.current;
-    analyserRef.current.getByteFrequencyData(data);
+    analyserRef.current.getByteFrequencyData(data as Uint8Array<ArrayBuffer>);
     const len = data.length;
     let bass = 0, mid = 0, high = 0;
     const bassEnd = Math.floor(len * 0.15);
