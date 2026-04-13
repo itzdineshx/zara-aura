@@ -5,133 +5,269 @@ import MicButton from "@/components/MicButton";
 import SettingsPanel from "@/components/SettingsPanel";
 import TopBar from "@/components/TopBar";
 import { defaultSettings, orbPaletteHues, type ZaraSettings } from "@/lib/settings";
+import { sendVoiceChunk, syncBackendMode, type BackendEmotion } from "@/lib/backend";
 
 type OrbState = "idle" | "listening" | "thinking" | "speaking";
+
+const AUTO_STOP_MS = 4500;
+
+function chooseRecorderMimeType(): string | undefined {
+  if (typeof MediaRecorder === "undefined" || typeof MediaRecorder.isTypeSupported !== "function") {
+    return undefined;
+  }
+
+  const preferred = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+  return preferred.find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
+}
+
+function truncate(text: string, maxLength: number) {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength - 1)}...`;
+}
 
 const Index = () => {
   const [orbState, setOrbState] = useState<OrbState>("idle");
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<ZaraSettings>(defaultSettings);
+  const [assistantText, setAssistantText] = useState("Hello, I'm ZARA.");
+  const [lastTranscript, setLastTranscript] = useState("");
+  const [lastEmotion, setLastEmotion] = useState<BackendEmotion>("neutral");
+  const [runtimeHint, setRuntimeHint] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [voiceSignal, setVoiceSignal] = useState({ volume: 0, pitch: 160 });
 
   const streamRef = useRef<MediaStream | null>(null);
-  const timersRef = useRef<number[]>([]);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const autoStopTimerRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
 
-  const clearTimers = useCallback(() => {
-    timersRef.current.forEach((timerId) => window.clearTimeout(timerId));
-    timersRef.current = [];
+  const clearAutoStop = useCallback(() => {
+    if (autoStopTimerRef.current !== null) {
+      window.clearTimeout(autoStopTimerRef.current);
+      autoStopTimerRef.current = null;
+    }
   }, []);
 
-  const stopVoiceSession = useCallback(() => {
-    clearTimers();
+  const releaseAudioStream = useCallback(() => {
     setOrbState("idle");
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     setAudioStream(null);
-  }, [clearTimers]);
+  }, []);
 
-  useEffect(
-    () => () => {
-      stopVoiceSession();
+  const speakResponse = useCallback(
+    async (text: string) => {
+      if (!("speechSynthesis" in window) || !text.trim()) {
+        return;
+      }
+
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = settings.voice.language;
+      utterance.rate = Math.min(1.4, Math.max(0.75, settings.voice.voiceSpeed / 100));
+
+      await new Promise<void>((resolve) => {
+        utterance.onend = () => resolve();
+        utterance.onerror = () => resolve();
+        window.speechSynthesis.speak(utterance);
+      });
     },
-    [stopVoiceSession],
+    [settings.voice.language, settings.voice.voiceSpeed],
   );
 
-  const processingProfile = useMemo(() => {
-    const speedFactor = settings.voice.voiceSpeed / 100;
-    const listeningDelay = 1700 + (100 - settings.voice.micSensitivity) * 14;
-    const modeBias =
-      settings.ai.responseMode === "offline" ? 1200 : settings.ai.responseMode === "online" ? 600 : 900;
-    const reasoningBias = settings.ai.adaptiveReasoning ? 320 : -120;
-    const privacyBias = settings.privacy.onDeviceOnly ? 260 : 0;
-    const speakingBias = settings.mode.presence === "physical" ? 350 : 0;
-    const thinkingWindow = Math.max(900, modeBias + reasoningBias + privacyBias);
-    const speakingWindow = Math.max(1400, Math.round(2600 / speedFactor) + speakingBias);
+  const processVoiceChunk = useCallback(
+    async (audioChunk: Blob) => {
+      setOrbState("thinking");
+      setRuntimeHint("Processing voice with ZARA backend...");
 
-    return {
-      toThinking: Math.round(listeningDelay),
-      toSpeaking: Math.round(listeningDelay + thinkingWindow),
-      toIdle: Math.round(listeningDelay + thinkingWindow + speakingWindow),
-    };
-  }, [
-    settings.ai.adaptiveReasoning,
-    settings.ai.responseMode,
-    settings.mode.presence,
-    settings.privacy.onDeviceOnly,
-    settings.voice.micSensitivity,
-    settings.voice.voiceSpeed,
-  ]);
+      try {
+        const response = await sendVoiceChunk(audioChunk, settings.ai.responseMode);
+        if (!mountedRef.current) return;
 
-  const messages = useMemo<Record<OrbState, string>>(() => {
-    const idleMessage =
-      settings.personality.tone === "expressive"
-        ? "Hello, I'm ZARA. Let's build something remarkable."
-        : settings.personality.tone === "concise"
-          ? "ZARA is ready."
-          : "Hello, I'm ZARA.";
+        setAssistantText(response.text);
+        setLastTranscript(response.transcript);
+        setLastEmotion(response.emotion);
+        setVoiceSignal(response.audio_features);
 
-    const thinkingMessage =
-      settings.ai.responseMode === "offline" || settings.privacy.onDeviceOnly
-        ? "Processing locally..."
-        : "Let me think...";
+        if (response.action && response.action.type) {
+          setRuntimeHint(`Action ${String(response.action.type)} ${String(response.action.status ?? "ready")}`);
+        } else {
+          setRuntimeHint("");
+        }
 
-    const speakingMessage =
-      settings.mode.presence === "physical"
-        ? "Transmitting output to physical channel."
-        : "Here's what I found.";
+        setOrbState("speaking");
+        await speakResponse(response.text);
+      } catch (error) {
+        if (!mountedRef.current) return;
 
-    return {
-      idle: idleMessage,
-      listening: "I'm listening...",
-      thinking: thinkingMessage,
-      speaking: speakingMessage,
-    };
-  }, [
-    settings.ai.responseMode,
-    settings.mode.presence,
-    settings.personality.tone,
-    settings.privacy.onDeviceOnly,
-  ]);
-
-  const subtext = useMemo<Record<OrbState, string>>(
-    () => ({
-      idle: settings.ai.proactiveHints ? "Speak naturally. ZARA can suggest next actions." : "How can I help you?",
-      listening: "",
-      thinking: "",
-      speaking: "",
-    }),
-    [settings.ai.proactiveHints],
+        const message = error instanceof Error ? error.message : "Voice request failed";
+        setAssistantText("I couldn't process that voice request. Please try again.");
+        setRuntimeHint(message);
+      } finally {
+        if (!mountedRef.current) return;
+        setOrbState("idle");
+        setIsProcessing(false);
+      }
+    },
+    [settings.ai.responseMode, speakResponse],
   );
+
+  const stopRecording = useCallback(() => {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state === "inactive") {
+      clearAutoStop();
+      return;
+    }
+
+    recorder.stop();
+    clearAutoStop();
+  }, [clearAutoStop]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      stopRecording();
+      releaseAudioStream();
+      clearAutoStop();
+      window.speechSynthesis?.cancel();
+    };
+  }, [clearAutoStop, releaseAudioStream, stopRecording]);
+
+  useEffect(() => {
+    let active = true;
+    syncBackendMode(settings.ai.responseMode).catch((error) => {
+      if (!active) return;
+      const message = error instanceof Error ? error.message : "Unable to sync AI mode";
+      setRuntimeHint(message);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [settings.ai.responseMode]);
+
+  const messages = useMemo(() => {
+    if (orbState === "listening") {
+      return "I'm listening...";
+    }
+    if (orbState === "thinking") {
+      return settings.ai.responseMode === "offline" ? "Processing locally..." : "Thinking...";
+    }
+    return assistantText;
+  }, [assistantText, orbState, settings.ai.responseMode]);
+
+  const subtext = useMemo(() => {
+    if (runtimeHint) {
+      return runtimeHint;
+    }
+
+    if (orbState === "listening") {
+      return "Tap once more to send, or wait for auto-send.";
+    }
+
+    if (orbState === "speaking") {
+      return `Emotion: ${lastEmotion}`;
+    }
+
+    if (lastTranscript) {
+      return `Heard: ${truncate(lastTranscript, 90)}`;
+    }
+
+    return settings.ai.proactiveHints ? "Speak naturally. ZARA can suggest next actions." : "How can I help you?";
+  }, [lastEmotion, lastTranscript, orbState, runtimeHint, settings.ai.proactiveHints]);
 
   const orbVisuals = useMemo(
     () => ({
-      hue: orbPaletteHues[settings.orb.palette],
-      intensity: settings.orb.intensity,
-      reactivity: settings.orb.reactivity,
+      hue:
+        (orbPaletteHues[settings.orb.palette] +
+          (lastEmotion === "happy" ? 14 : lastEmotion === "angry" ? -24 : lastEmotion === "calm" ? 6 : 0) +
+          360) %
+        360,
+      intensity: Math.min(100, Math.max(30, Math.round(settings.orb.intensity * 0.7 + voiceSignal.volume * 30))),
+      reactivity: Math.min(100, Math.max(20, Math.round(settings.orb.reactivity * 0.65 + voiceSignal.volume * 35))),
       dimmed: settingsOpen,
     }),
-    [settings.orb.intensity, settings.orb.palette, settings.orb.reactivity, settingsOpen],
+    [lastEmotion, settings.orb.intensity, settings.orb.palette, settings.orb.reactivity, settingsOpen, voiceSignal.volume],
   );
 
   const handleMicToggle = useCallback(async () => {
-    if (orbState === "idle") {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        clearTimers();
-        streamRef.current = stream;
-        setAudioStream(stream);
-        setOrbState("listening");
-
-        timersRef.current.push(window.setTimeout(() => setOrbState("thinking"), processingProfile.toThinking));
-        timersRef.current.push(window.setTimeout(() => setOrbState("speaking"), processingProfile.toSpeaking));
-        timersRef.current.push(window.setTimeout(stopVoiceSession, processingProfile.toIdle));
-      } catch {
-        console.warn("Mic access denied");
-      }
-    } else {
-      stopVoiceSession();
+    if (isProcessing) {
+      return;
     }
-  }, [clearTimers, orbState, processingProfile.toIdle, processingProfile.toSpeaking, processingProfile.toThinking, stopVoiceSession]);
+
+    if (orbState === "listening") {
+      setIsProcessing(true);
+      setRuntimeHint("Sending voice chunk...");
+      stopRecording();
+      return;
+    }
+
+    if (orbState !== "idle") {
+      window.speechSynthesis?.cancel();
+      setOrbState("idle");
+      setRuntimeHint("");
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setRuntimeHint("This browser does not support microphone recording.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = chooseRecorderMimeType();
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+
+      audioChunksRef.current = [];
+      streamRef.current = stream;
+      recorderRef.current = recorder;
+      setAudioStream(stream);
+
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const chunkType = recorder.mimeType || "audio/webm";
+        const chunk = new Blob(audioChunksRef.current, { type: chunkType });
+        audioChunksRef.current = [];
+        recorderRef.current = null;
+        releaseAudioStream();
+
+        if (chunk.size === 0) {
+          setIsProcessing(false);
+          setRuntimeHint("No voice captured. Please try again.");
+          return;
+        }
+
+        void processVoiceChunk(chunk);
+      };
+
+      recorder.start();
+      setOrbState("listening");
+      setRuntimeHint("Listening...");
+
+      autoStopTimerRef.current = window.setTimeout(() => {
+        if (recorder.state !== "inactive") {
+          setIsProcessing(true);
+          setRuntimeHint("Auto-sending voice chunk...");
+          recorder.stop();
+        }
+      }, AUTO_STOP_MS);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Microphone permission denied";
+      setRuntimeHint(message);
+      releaseAudioStream();
+    }
+  }, [isProcessing, orbState, processVoiceChunk, releaseAudioStream, stopRecording]);
 
   return (
     <div className="relative flex min-h-screen select-none flex-col items-center justify-center overflow-hidden bg-black">
@@ -154,24 +290,24 @@ const Index = () => {
       <div className="absolute bottom-32 z-10 flex flex-col items-center gap-2 px-6 text-center">
         <AnimatePresence mode="wait">
           <motion.p
-            key={messages[orbState]}
+            key={messages}
             className="text-sm font-light text-foreground/90 tracking-wide"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.5, ease: "easeOut" }}
           >
-            {messages[orbState]}
+            {messages}
           </motion.p>
         </AnimatePresence>
-        {subtext[orbState] && (
+        {subtext && (
           <motion.p
             className="text-xs font-thin text-muted-foreground/50"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.3, duration: 0.5 }}
           >
-            {subtext[orbState]}
+            {subtext}
           </motion.p>
         )}
       </div>

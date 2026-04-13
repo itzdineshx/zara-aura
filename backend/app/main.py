@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import httpx
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import ORJSONResponse
 
@@ -88,6 +89,13 @@ app = FastAPI(
 
 # Compress JSON responses to reduce bandwidth and improve mobile latency.
 app.add_middleware(GZipMiddleware, minimum_size=300)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def get_services(request: Request) -> ServiceContainer:

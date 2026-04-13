@@ -1,7 +1,14 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(PROJECT_ROOT / ".env")
 
 
 def _env_int(name: str, default: int) -> int:
@@ -29,6 +36,11 @@ def _env_bool(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_csv(name: str, default: str) -> list[str]:
+    raw = os.getenv(name, default)
+    return [item.strip() for item in raw.split(",") if item.strip()]
 
 
 @dataclass(slots=True)
@@ -62,6 +74,13 @@ class Settings:
 
     tts_enabled: bool = _env_bool("TTS_ENABLED", False)
     tts_model_name: str = os.getenv("TTS_MODEL_NAME", "tts_models/en/ljspeech/tacotron2-DDC_ph")
+
+    cors_origins: list[str] = field(
+        default_factory=lambda: _env_csv(
+            "CORS_ORIGINS",
+            "http://localhost:8080,http://127.0.0.1:8080,http://localhost:8081,http://127.0.0.1:8081,http://localhost:5173,http://127.0.0.1:5173",
+        ),
+    )
 
 
 settings = Settings()
