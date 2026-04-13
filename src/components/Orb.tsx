@@ -9,20 +9,20 @@ interface OrbProps {
 const stateConfig = {
   idle: {
     scale: [1, 1.05, 1],
-    transition: { duration: 4, repeat: Infinity, ease: "easeInOut" },
+    transition: { duration: 4, repeat: Infinity, ease: "easeInOut" as const },
   },
   listening: {
     scale: [1, 1.12, 1.08, 1.12, 1],
-    transition: { duration: 2, repeat: Infinity, ease: "easeInOut" },
+    transition: { duration: 2, repeat: Infinity, ease: "easeInOut" as const },
   },
   thinking: {
     scale: [1, 1.03, 1],
     rotate: [0, 360],
-    transition: { duration: 6, repeat: Infinity, ease: "linear" },
+    transition: { duration: 6, repeat: Infinity, ease: "linear" as const },
   },
   speaking: {
     scale: [1, 1.08, 0.97, 1.06, 1],
-    transition: { duration: 1.2, repeat: Infinity, ease: "easeInOut" },
+    transition: { duration: 1.2, repeat: Infinity, ease: "easeInOut" as const },
   },
 };
 
