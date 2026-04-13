@@ -127,7 +127,7 @@ const Index = () => {
             className="fixed top-14 right-6 flex items-center gap-3 z-10"
           >
             <div className="flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500/70 animate-pulse" />
+              <div className="w-1.5 h-1.5 rounded-full bg-primary/70 animate-pulse" />
               <span className="text-[9px] font-light text-muted-foreground/40">IoT Connected</span>
             </div>
             <div className="flex items-center gap-1.5">
