@@ -65,6 +65,7 @@ class Settings:
     ollama_num_predict: int = _env_int("OLLAMA_NUM_PREDICT", 260)
 
     whisper_model_size: str = os.getenv("WHISPER_MODEL_SIZE", "tiny")
+    whisper_multilingual_model_size: str = os.getenv("WHISPER_MULTILINGUAL_MODEL_SIZE", "base")
     whisper_device: str = os.getenv("WHISPER_DEVICE", "cpu")
     whisper_compute_type: str = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
     max_audio_seconds: int = _env_int("MAX_AUDIO_SECONDS", 8)

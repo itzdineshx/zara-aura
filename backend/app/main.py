@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -24,7 +25,7 @@ from app.services.mode_state import ModeState
 from app.services.ollama_client import OllamaClient
 from app.services.openrouter_client import OpenRouterClient
 from app.services.tts_service import TTSService
-from app.services.whisper_service import WhisperService
+from app.services.whisper_service import TranscriptionResult, WhisperService
 
 
 logger = logging.getLogger(__name__)
@@ -74,19 +75,49 @@ def _resolve_response_language(
     if not preferred_code:
         return detected
 
-    if detected.code == preferred_code:
-        return detected
-
-    # In mixed commands like "Telugu + English query", detector can skew to English.
-    # Prefer user-selected language when confidence is low or detected language falls back to English.
-    if detected.code == "en" or detected.confidence < 0.78:
+    # Honor explicit non-English user preference for reply language.
+    if preferred_code != "en":
         return LanguageDetectionResult(
             code=preferred_code,
             name=_SUPPORTED_RESPONSE_LANGUAGE_NAMES[preferred_code],
             confidence=max(0.8, detected.confidence),
         )
 
-    return detected
+    # When UI is left on default English, still allow clear detected Indian language replies.
+    if detected.code in {"hi", "ta", "te", "ml"} and detected.confidence >= 0.7:
+        return detected
+
+    return LanguageDetectionResult(
+        code="en",
+        name=_SUPPORTED_RESPONSE_LANGUAGE_NAMES["en"],
+        confidence=max(0.8, detected.confidence),
+    )
+
+
+def _merge_voice_language_detection(
+    text_detected: LanguageDetectionResult,
+    transcription: TranscriptionResult,
+) -> LanguageDetectionResult:
+    whisper_code = _normalize_preferred_language(transcription.language_code)
+    if not whisper_code:
+        return text_detected
+
+    if whisper_code == text_detected.code:
+        return LanguageDetectionResult(
+            code=text_detected.code,
+            name=text_detected.name,
+            confidence=max(text_detected.confidence, transcription.language_confidence),
+        )
+
+    # Prefer Whisper-detected language when text-based detection is uncertain or falls back to English.
+    if transcription.language_confidence >= 0.55 and (text_detected.code == "en" or text_detected.confidence < 0.74):
+        return LanguageDetectionResult(
+            code=whisper_code,
+            name=_SUPPORTED_RESPONSE_LANGUAGE_NAMES[whisper_code],
+            confidence=max(text_detected.confidence, transcription.language_confidence),
+        )
+
+    return text_detected
 
 
 @dataclass(slots=True)
@@ -246,32 +277,42 @@ async def voice(
     if not audio_bytes:
         raise HTTPException(status_code=400, detail="Audio file is empty")
 
-    try:
-        audio_features = await services.audio_feature_service.extract_from_bytes(audio_bytes)
-    except Exception as exc:
-        logger.warning("Audio feature extraction failed, using neutral defaults: %s", exc)
-        audio_features = AudioFeatureResult(volume=0.0, pitch=160.0, speech_rate=0.0, duration_seconds=0.0)
+    preferred_language_code = _normalize_preferred_language(preferred_language)
+    whisper_language_hint = preferred_language_code if preferred_language_code and preferred_language_code != "en" else None
 
-    if audio_features.duration_seconds > settings.max_audio_seconds:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Audio too long. Send chunks up to {settings.max_audio_seconds} seconds.",
+    feature_task = asyncio.create_task(services.audio_feature_service.extract_from_bytes(audio_bytes))
+
+    try:
+        transcription = await services.whisper_service.transcribe_with_metadata(
+            audio_bytes,
+            language_hint=whisper_language_hint,
         )
-
-    try:
-        transcript = await services.whisper_service.transcribe_audio(audio_bytes)
     except ValueError as exc:
+        if not feature_task.done():
+            feature_task.cancel()
         detail = str(exc)
         status_code = 413 if "too long" in detail.lower() else 422
         raise HTTPException(status_code=status_code, detail=detail) from exc
     except Exception as exc:
+        if not feature_task.done():
+            feature_task.cancel()
         raise HTTPException(status_code=500, detail=f"Transcription failed: {exc}") from exc
 
+    transcript = transcription.text
     if not transcript:
         raise HTTPException(status_code=422, detail="Could not detect speech in the provided audio")
 
+    audio_features = AudioFeatureResult(volume=0.0, pitch=160.0, speech_rate=0.0, duration_seconds=0.0)
+    try:
+        audio_features = await asyncio.wait_for(feature_task, timeout=0.12)
+    except asyncio.TimeoutError:
+        if not feature_task.done():
+            feature_task.cancel()
+    except Exception as exc:
+        logger.debug("Audio feature extraction failed, using neutral defaults: %s", exc)
+
     detected_language = services.language_service.detect(transcript)
-    preferred_language_code = _normalize_preferred_language(preferred_language)
+    detected_language = _merge_voice_language_detection(detected_language, transcription)
     response_language = _resolve_response_language(detected_language, preferred_language_code)
 
     effective_mode: ModeLiteral = mode or await services.mode_state.get_mode()

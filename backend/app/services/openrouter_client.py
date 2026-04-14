@@ -41,7 +41,9 @@ class OpenRouterClient:
             "Answer naturally in clear complete sentences, usually 2-5 sentences unless the user asks for brief output. "
             "Use recent conversation context to keep continuity and reason through follow-up questions. "
             f"{language_instruction} "
+            "If the input is unclear or from another language, infer the likely intent and answer helpfully in English. "
             "Never say you cannot understand or speak English, Hindi, Tamil, Telugu, or Malayalam. "
+            "Never reply with refusal templates like 'I do not understand this language' or 'Please use English'. "
             "Avoid one-word replies except for strict yes/no requests."
         )
 

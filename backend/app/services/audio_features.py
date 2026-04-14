@@ -3,13 +3,11 @@ from __future__ import annotations
 import base64
 import io
 import logging
-import os
-import tempfile
 from dataclasses import dataclass
 
 import anyio
-import librosa
 import numpy as np
+import soundfile as sf
 
 
 logger = logging.getLogger(__name__)
@@ -43,45 +41,30 @@ class AudioFeatureService:
 
     def _extract_sync(self, audio_bytes: bytes) -> AudioFeatureResult:
         if not audio_bytes:
-            return AudioFeatureResult(volume=0.0, pitch=0.0, speech_rate=0.0, duration_seconds=0.0)
+            return _neutral_features()
+
+        # Browser microphone chunks are typically WebM/MP4 containers.
+        # Decoding those for UI-only features is expensive and non-essential.
+        if _requires_ffmpeg_decode(audio_bytes):
+            return _neutral_features()
 
         try:
-            audio, sr = librosa.load(io.BytesIO(audio_bytes), sr=16000, mono=True)
-        except Exception as first_error:
-            temp_path = ""
-            try:
-                suffix = _guess_audio_suffix(audio_bytes)
-                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-                    temp_file.write(audio_bytes)
-                    temp_path = temp_file.name
-
-                # Using a filesystem path lets librosa try additional backends.
-                audio, sr = librosa.load(temp_path, sr=16000, mono=True)
-            except Exception as second_error:
-                logger.warning(
-                    "Audio feature extraction decode failed. Returning neutral features. "
-                    "first_error=%s second_error=%s",
-                    first_error,
-                    second_error,
-                )
-                return AudioFeatureResult(volume=0.0, pitch=160.0, speech_rate=0.0, duration_seconds=0.0)
-            finally:
-                if temp_path:
-                    try:
-                        os.remove(temp_path)
-                    except OSError:
-                        pass
-
-        audio = np.asarray(audio, dtype=np.float32)
+            audio, sr = _decode_mono_float32(audio_bytes)
+        except Exception as decode_error:
+            logger.debug("Audio feature decode unavailable; using neutral defaults: %s", decode_error)
+            return _neutral_features()
 
         if audio.size == 0:
-            return AudioFeatureResult(volume=0.0, pitch=0.0, speech_rate=0.0, duration_seconds=0.0)
+            return _neutral_features()
 
         duration_seconds = float(audio.shape[0] / sr)
 
-        rms = float(np.mean(librosa.feature.rms(y=audio)))
-        zcr = float(np.mean(librosa.feature.zero_crossing_rate(y=audio)))
-        tempo, _ = librosa.beat.beat_track(y=audio, sr=sr)
+        rms = float(np.sqrt(np.mean(np.square(audio), dtype=np.float64)))
+        if audio.size > 1:
+            zero_crossings = np.count_nonzero(np.diff(np.signbit(audio)))
+            zcr = float(zero_crossings / (audio.size - 1))
+        else:
+            zcr = 0.0
 
         # Scale RMS to a normalized UI volume in [0, 1].
         volume = _clamp(rms * 4.0, 0.0, 1.0)
@@ -89,27 +72,36 @@ class AudioFeatureService:
         # Rough pitch proxy from zero crossing rate, intentionally lightweight.
         pitch = _clamp(80.0 + (zcr * 1400.0), 60.0, 420.0)
 
-        speech_rate = float(tempo if np.isfinite(tempo) else 0.0)
-
         return AudioFeatureResult(
             volume=round(volume, 3),
             pitch=round(pitch, 1),
-            speech_rate=round(speech_rate, 1),
+            speech_rate=0.0,
             duration_seconds=round(duration_seconds, 3),
         )
 
 
-def _guess_audio_suffix(audio_bytes: bytes) -> str:
-    if audio_bytes.startswith(b"RIFF") and len(audio_bytes) >= 12 and audio_bytes[8:12] == b"WAVE":
-        return ".wav"
-    if audio_bytes.startswith(b"OggS"):
-        return ".ogg"
-    if audio_bytes.startswith(b"fLaC"):
-        return ".flac"
-    if audio_bytes.startswith(b"ID3"):
-        return ".mp3"
-    if audio_bytes[:2] == b"\xff\xfb":
-        return ".mp3"
+def _neutral_features() -> AudioFeatureResult:
+    return AudioFeatureResult(volume=0.0, pitch=160.0, speech_rate=0.0, duration_seconds=0.0)
+
+
+def _decode_mono_float32(audio_bytes: bytes) -> tuple[np.ndarray, int]:
+    with io.BytesIO(audio_bytes) as stream:
+        audio, sr = sf.read(stream, dtype="float32", always_2d=False)
+
+    signal = np.asarray(audio, dtype=np.float32)
+    if signal.ndim == 2:
+        signal = np.mean(signal, axis=1, dtype=np.float32)
+    elif signal.ndim > 2:
+        signal = signal.reshape(-1)
+
+    return signal, int(sr)
+
+
+def _requires_ffmpeg_decode(audio_bytes: bytes) -> bool:
     if audio_bytes.startswith(b"\x1a\x45\xdf\xa3"):
-        return ".webm"
-    return ".bin"
+        return True
+
+    if len(audio_bytes) >= 12 and audio_bytes[4:8] == b"ftyp":
+        return True
+
+    return False

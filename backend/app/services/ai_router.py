@@ -18,6 +18,22 @@ RouteSource = Literal["openrouter", "ollama"]
 class AIRouterService:
     """Cost and speed aware request router for online/offline/smart modes."""
 
+    _LANGUAGE_REFUSAL_RE = re.compile(
+        (
+            r"\b("
+            r"do not understand this language|"
+            r"don't understand this language|"
+            r"cannot understand this language|"
+            r"only understand english|"
+            r"i only understand english|"
+            r"please use english|"
+            r"please speak english|"
+            r"please use english[, ]+hindi[, ]+tamil[, ]+telugu[, ]+or[ ,]+malayalam"
+            r")\b"
+        ),
+        flags=re.IGNORECASE,
+    )
+
     def __init__(
         self,
         settings: Settings,
@@ -57,7 +73,22 @@ class AIRouterService:
         else:
             answer, source = await self._smart_route(normalized, history, response_language=response_language)
 
-        await self._cache_set(cache_key, answer)
+        if self._is_language_refusal(answer):
+            recovered = await self._recover_from_language_refusal(
+                text=normalized,
+                source=source,
+                history=history,
+                response_language=response_language,
+            )
+            if recovered is not None:
+                answer, source = recovered
+
+        if self._is_language_refusal(answer):
+            answer = self._fallback_clarification(response_language)
+
+        if not self._is_language_refusal(answer):
+            await self._cache_set(cache_key, answer)
+
         return answer, source
 
     async def _cache_get(self, key: str) -> str | None:
@@ -69,10 +100,17 @@ class AIRouterService:
             self.cache[key] = value
 
     async def _offline_only(self, text: str, response_language: str | None = None) -> tuple[str, RouteSource]:
+        primary_model = self.settings.ollama_model
+        secondary_model = self.settings.ollama_fallback_model
+
+        # Small local models often underperform for Indic languages; try the fallback model first there.
+        if self._is_non_english_target(response_language):
+            primary_model, secondary_model = secondary_model, primary_model
+
         try:
             response = await self.ollama_client.generate(
                 text,
-                model=self.settings.ollama_model,
+                model=primary_model,
                 timeout_s=self.settings.ollama_timeout_s,
                 response_language=response_language,
             )
@@ -81,7 +119,7 @@ class AIRouterService:
             try:
                 fallback_response = await self.ollama_client.generate(
                     text,
-                    model=self.settings.ollama_fallback_model,
+                    model=secondary_model,
                     timeout_s=self.settings.ollama_timeout_s,
                     response_language=response_language,
                 )
@@ -114,27 +152,23 @@ class AIRouterService:
         history: list[dict[str, str]] | None,
         response_language: str | None = None,
     ) -> tuple[str, RouteSource]:
+        if self._is_non_english_target(response_language):
+            return await self._online_with_fallback(text, history, response_language=response_language)
+
         if self._is_simple_query(text):
             try:
-                online = await asyncio.wait_for(
-                    self.openrouter_client.chat(text, history=history, response_language=response_language),
-                    timeout=self.settings.openrouter_timeout_s,
+                quick_offline = await asyncio.wait_for(
+                    self.ollama_client.generate(
+                        text,
+                        model=self.settings.ollama_model,
+                        timeout_s=min(3.5, self.settings.ollama_timeout_s),
+                        response_language=response_language,
+                    ),
+                    timeout=3.8,
                 )
-                return online, "openrouter"
+                return quick_offline, "ollama"
             except Exception:
-                try:
-                    quick_offline = await asyncio.wait_for(
-                        self.ollama_client.generate(
-                            text,
-                            model=self.settings.ollama_model,
-                            timeout_s=min(4.0, self.settings.ollama_timeout_s),
-                            response_language=response_language,
-                        ),
-                        timeout=4.2,
-                    )
-                    return quick_offline, "ollama"
-                except Exception:
-                    return await self._online_with_fallback(text, history, response_language=response_language)
+                return await self._online_with_fallback(text, history, response_language=response_language)
 
         try:
             online = await asyncio.wait_for(
@@ -161,3 +195,70 @@ class AIRouterService:
 
         sentence_count = stripped.count(".") + stripped.count("?") + stripped.count("!")
         return sentence_count <= 1 and len(words) <= 14
+
+    def _is_language_refusal(self, text: str) -> bool:
+        normalized = " ".join(text.strip().split())
+        if not normalized:
+            return False
+
+        # Keep this check focused on short refusal templates to avoid false positives.
+        if len(normalized) > 220:
+            return False
+
+        return bool(self._LANGUAGE_REFUSAL_RE.search(normalized))
+
+    async def _recover_from_language_refusal(
+        self,
+        text: str,
+        source: RouteSource,
+        history: list[dict[str, str]] | None,
+        response_language: str | None,
+    ) -> tuple[str, RouteSource] | None:
+        if source == "ollama":
+            try:
+                response = await asyncio.wait_for(
+                    self.openrouter_client.chat(text, history=history, response_language=response_language),
+                    timeout=min(6.0, self.settings.openrouter_timeout_s),
+                )
+                if response and not self._is_language_refusal(response):
+                    return response, "openrouter"
+            except Exception:
+                return None
+            return None
+
+        try:
+            response = await asyncio.wait_for(
+                self.ollama_client.generate(
+                    text,
+                    model=self.settings.ollama_model,
+                    timeout_s=min(4.0, self.settings.ollama_timeout_s),
+                    response_language=response_language,
+                ),
+                timeout=4.2,
+            )
+            if response and not self._is_language_refusal(response):
+                return response, "ollama"
+        except Exception:
+            return None
+
+        return None
+
+    def _fallback_clarification(self, response_language: str | None) -> str:
+        language_name = (response_language or "English").strip()
+        return (
+            "I could not catch that clearly from the audio. "
+            f"Please say it again in a short sentence (I will respond in {language_name})."
+        )
+
+    def _is_non_english_target(self, response_language: str | None) -> bool:
+        if not response_language:
+            return False
+
+        normalized = response_language.strip().lower()
+        if not normalized:
+            return False
+
+        if normalized in {"en", "en-us", "en-gb", "english"}:
+            return False
+
+        return normalized in {"hi", "ta", "te", "ml", "hindi", "tamil", "telugu", "malayalam"}

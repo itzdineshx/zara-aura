@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from typing import Final
@@ -30,6 +31,7 @@ class TTSService:
         self.settings = settings
         self._tts_model = None
         self._model_lock = asyncio.Lock()
+        self._edge_disabled_until = 0.0
 
     async def synthesize_bytes(self, text: str, language_code: str | None = None) -> tuple[bytes, str] | None:
         if not text.strip():
@@ -100,6 +102,9 @@ class TTSService:
             return self._tts_model
 
     async def _synthesize_with_edge_tts(self, text: str, language_code: str) -> bytes | None:
+        if time.monotonic() < self._edge_disabled_until:
+            return None
+
         voice = self.EDGE_VOICE_BY_LANGUAGE.get(language_code, self.EDGE_VOICE_BY_LANGUAGE["en"])
 
         try:
@@ -123,7 +128,16 @@ class TTSService:
 
             return b"".join(chunks)
         except Exception as exc:
-            logger.warning("Edge TTS failed for language=%s voice=%s: %s", language_code, voice, exc)
+            message = str(exc)
+            cooldown_seconds = 600.0 if "403" in message else 120.0
+            self._edge_disabled_until = time.monotonic() + cooldown_seconds
+            logger.warning(
+                "Edge TTS failed for language=%s voice=%s. Cooling down for %.0fs: %s",
+                language_code,
+                voice,
+                cooldown_seconds,
+                exc,
+            )
             return None
 
     async def _synthesize_with_gtts(self, text: str, language_code: str) -> bytes | None:
