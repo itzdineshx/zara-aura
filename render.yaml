@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: zara-backend
+    env: python
+    rootDir: backend
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: gunicorn -c gunicorn_conf.py app.main:app
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: PORT
+        value: 8000
+      - key: WEB_CONCURRENCY
+        value: 1
+      - key: TTS_ENABLED
+        value: false
+      - key: FLIGHT_MODE_DEFAULT
+        value: false
+      - key: FLIGHT_MQTT_ENABLED
+        value: true
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: FLIGHT_MQTT_HOST
+        sync: false
+      - key: FLIGHT_MQTT_PORT
+        sync: false
+      - key: FLIGHT_MQTT_USERNAME
+        sync: false
+      - key: FLIGHT_MQTT_PASSWORD
+        sync: false
+      - key: FLIGHT_MQTT_TLS_ENABLED
+        value: true
+      - key: FLIGHT_MQTT_TLS_INSECURE
+        value: false

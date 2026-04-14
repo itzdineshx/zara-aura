@@ -6,6 +6,7 @@ import json
 import logging
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 import paho.mqtt.client as mqtt
@@ -62,12 +63,41 @@ class MQTTFlightController:
                 password=settings.flight_mqtt_password or None,
             )
 
+        if settings.flight_mqtt_tls_enabled:
+            self._configure_tls()
+
         retry_delay_s = max(0.05, settings.flight_mqtt_retry_delay_ms / 1000.0)
         self._client.reconnect_delay_set(min_delay=retry_delay_s, max_delay=max(1.0, retry_delay_s * 10))
 
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
         self._client.on_message = self._on_message
+
+    def _configure_tls(self) -> None:
+        ca_certs = self._resolve_path(self.settings.flight_mqtt_tls_ca_cert)
+        certfile = self._resolve_path(self.settings.flight_mqtt_tls_certfile)
+        keyfile = self._resolve_path(self.settings.flight_mqtt_tls_keyfile)
+
+        self._client.tls_set(
+            ca_certs=ca_certs or None,
+            certfile=certfile or None,
+            keyfile=keyfile or None,
+        )
+
+        if self.settings.flight_mqtt_tls_insecure:
+            self._client.tls_insecure_set(True)
+
+        logger.info("Flight MQTT TLS enabled (insecure=%s)", self.settings.flight_mqtt_tls_insecure)
+
+    def _resolve_path(self, value: str) -> str:
+        raw = value.strip()
+        if not raw:
+            return ""
+
+        path = Path(raw).expanduser()
+        if not path.exists():
+            logger.warning("MQTT TLS file does not exist yet: %s", path)
+        return str(path)
 
     def start(self) -> None:
         if not self.settings.flight_mqtt_enabled:

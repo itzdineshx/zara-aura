@@ -1,4 +1,5 @@
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
@@ -18,6 +19,12 @@ const char* MQTT_PASSWORD = "";
 const char* TOPIC_CONTROL = "zara/flight/control";
 const char* TOPIC_STATUS = "zara/flight/status";
 
+// Set true when using a cloud broker on TLS port (usually 8883).
+const bool MQTT_USE_TLS = false;
+
+// Paste the broker root CA PEM when available. Leave empty to fallback to insecure TLS mode.
+const char* MQTT_ROOT_CA = "";
+
 #ifndef LED_BUILTIN
 #define LED_BUILTIN 2
 #endif
@@ -36,7 +43,8 @@ constexpr uint16_t ESC_START_BOOST_MS = 350;
 constexpr uint16_t ESC_ARM_DELAY_MS = 2500;
 
 WiFiClient wifiClient;
-PubSubClient mqttClient(wifiClient);
+WiFiClientSecure secureClient;
+PubSubClient mqttClient;
 
 bool ledOn = false;
 bool engineOn = false;
@@ -326,6 +334,21 @@ void setup() {
   Serial.println("[ENGINE] ESC ready.");
 
   WiFi.setSleep(false);
+
+  if (MQTT_USE_TLS) {
+    if (strlen(MQTT_ROOT_CA) > 0) {
+      secureClient.setCACert(MQTT_ROOT_CA);
+      Serial.println("[MQTT] TLS enabled with CA certificate.");
+    } else {
+      secureClient.setInsecure();
+      Serial.println("[MQTT] TLS enabled in insecure mode (no CA cert configured).");
+    }
+    mqttClient.setClient(secureClient);
+  } else {
+    mqttClient.setClient(wifiClient);
+    Serial.println("[MQTT] TLS disabled (plain TCP).");
+  }
+
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setCallback(mqttCallback);
   mqttClient.setBufferSize(512);

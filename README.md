@@ -38,3 +38,8 @@ Detailed setup:
 
 - `backend/FLIGHT_MODE_MQTT.md`
 - `iot/esp32/zara_flight_controller.ino`
+
+## Online Hosting
+
+- `DEPLOYMENT_ONLINE.md`
+- `DEPLOYMENT_VERCEL_RENDER.md`

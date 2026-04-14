@@ -1,0 +1,10 @@
+.git
+.gitignore
+.vscode
+.venv
+node_modules
+dist
+coverage
+**/__pycache__
+**/*.pyc
+backend/.env
