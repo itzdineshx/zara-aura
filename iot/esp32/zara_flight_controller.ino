@@ -1,14 +1,17 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
-#include <ESP32Servo.h>
+
+#if __has_include(<esp_arduino_version.h>)
+#include <esp_arduino_version.h>
+#endif
 
 // WiFi credentials
 const char* WIFI_SSID = "Zayma";
 const char* WIFI_PASSWORD = "reddragon";
 
 // MQTT broker (local Mosquitto)
-const char* MQTT_HOST = "10.67.9.249";
+const char* MQTT_HOST = "10.67.9.51";
 const uint16_t MQTT_PORT = 1884;
 const char* MQTT_USER = "";
 const char* MQTT_PASSWORD = "";
@@ -19,155 +22,185 @@ const char* TOPIC_STATUS = "zara/flight/status";
 #define LED_BUILTIN 2
 #endif
 
-// Pin mapping
-constexpr uint8_t SERVO_PIN = 18;
-constexpr uint8_t ENGINE_PIN = 19;
-constexpr uint8_t THROTTLE_PWM_PIN = 21;
-
-// Servo limits
-constexpr int SERVO_MIN_DEG = 0;
-constexpr int SERVO_MAX_DEG = 180;
-constexpr int SERVO_LEFT_DEG = 60;
-constexpr int SERVO_RIGHT_DEG = 120;
-constexpr int SERVO_CENTER_DEG = 90;
-
-// Throttle PWM (8-bit)
-constexpr uint8_t PWM_CHANNEL = 0;
-constexpr uint16_t PWM_FREQUENCY_HZ = 5000;
-constexpr uint8_t PWM_RESOLUTION_BITS = 8;
-constexpr uint8_t THROTTLE_MIN = 0;
-constexpr uint8_t THROTTLE_MAX = 255;
+// BLDC motor (ESC signal on GPIO5)
+constexpr uint8_t BLDC_SIGNAL_PIN = 5;
+constexpr uint8_t ENGINE_PWM_CHANNEL = 1;
+constexpr uint16_t ENGINE_PWM_FREQUENCY_HZ = 50;
+constexpr uint8_t ENGINE_PWM_RESOLUTION_BITS = 16;
+constexpr uint16_t ESC_MIN_US = 1000;
+constexpr uint16_t ESC_MAX_US = 2000;
+constexpr uint16_t ESC_STOP_US = ESC_MIN_US;
+constexpr uint16_t ESC_SPIN_US = 1300;
+constexpr uint16_t ESC_START_BOOST_US = 1450;
+constexpr uint16_t ESC_START_BOOST_MS = 350;
+constexpr uint16_t ESC_ARM_DELAY_MS = 2500;
 
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
-Servo rudderServo;
 
-bool engineEnabled = false;
-uint8_t throttleValue = THROTTLE_MIN;
-int servoAngle = SERVO_CENTER_DEG;
+bool ledOn = false;
+bool engineOn = false;
+bool enginePwmReady = false;
+uint16_t enginePulseUs = ESC_STOP_US;
+bool wifiConnectionLogged = false;
+bool mqttConnectionLogged = false;
+char mqttClientId[40] = {0};
 
 unsigned long lastWifiAttemptMs = 0;
 unsigned long lastMqttAttemptMs = 0;
 
-int clampServoAngle(int angle) {
-  if (angle < SERVO_MIN_DEG) {
-    return SERVO_MIN_DEG;
-  }
-  if (angle > SERVO_MAX_DEG) {
-    return SERVO_MAX_DEG;
-  }
-  return angle;
-}
-
-uint8_t clampThrottle(int value) {
-  if (value < THROTTLE_MIN) {
-    return THROTTLE_MIN;
-  }
-  if (value > THROTTLE_MAX) {
-    return THROTTLE_MAX;
-  }
-  return static_cast<uint8_t>(value);
-}
-
-void publishStatus(const char* status, int value = -1) {
+void publishStatus(const char* status) {
   StaticJsonDocument<256> doc;
   doc["status"] = status;
-  doc["engine_on"] = engineEnabled;
-  doc["throttle"] = throttleValue;
-  doc["servo"] = servoAngle;
+  doc["led_on"] = ledOn;
+  doc["engine_on"] = engineOn;
+  doc["engine_signal_us"] = enginePulseUs;
   doc["uptime_ms"] = millis();
-
-  if (value >= 0) {
-    doc["value"] = value;
-  }
 
   char payload[256];
   const size_t len = serializeJson(doc, payload, sizeof(payload));
-  mqttClient.publish(TOPIC_STATUS, payload, len, false);
+  mqttClient.publish(TOPIC_STATUS, reinterpret_cast<const uint8_t*>(payload), static_cast<unsigned int>(len), false);
 }
 
-void setServoAngle(int angle) {
-  servoAngle = clampServoAngle(angle);
-  rudderServo.write(servoAngle);
+uint32_t escPulseUsToDuty(uint16_t pulseUs) {
+  const uint32_t pwmPeriodUs = 1000000UL / ENGINE_PWM_FREQUENCY_HZ;
+  const uint32_t maxDuty = (1UL << ENGINE_PWM_RESOLUTION_BITS) - 1UL;
+  return static_cast<uint32_t>((static_cast<uint64_t>(pulseUs) * maxDuty) / pwmPeriodUs);
 }
 
-void setThrottle(uint8_t value) {
-  throttleValue = clampThrottle(value);
-  ledcWrite(PWM_CHANNEL, throttleValue);
+uint16_t clampEscPulseUs(int pulseUs) {
+  if (pulseUs < static_cast<int>(ESC_MIN_US)) {
+    return ESC_MIN_US;
+  }
+  if (pulseUs > static_cast<int>(ESC_MAX_US)) {
+    return ESC_MAX_US;
+  }
+  return static_cast<uint16_t>(pulseUs);
 }
 
-void applyEmergencyStop() {
-  digitalWrite(LED_BUILTIN, LOW);
-  engineEnabled = false;
-  digitalWrite(ENGINE_PIN, LOW);
-  setThrottle(THROTTLE_MIN);
-  setServoAngle(SERVO_CENTER_DEG);
+void initEnginePwm() {
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
+  enginePwmReady = ledcAttach(BLDC_SIGNAL_PIN, ENGINE_PWM_FREQUENCY_HZ, ENGINE_PWM_RESOLUTION_BITS);
+#else
+  ledcSetup(ENGINE_PWM_CHANNEL, ENGINE_PWM_FREQUENCY_HZ, ENGINE_PWM_RESOLUTION_BITS);
+  ledcAttachPin(BLDC_SIGNAL_PIN, ENGINE_PWM_CHANNEL);
+  enginePwmReady = true;
+#endif
+}
+
+void writeEscPulseUs(uint16_t pulseUs) {
+  if (!enginePwmReady) {
+    return;
+  }
+
+  const uint16_t clampedPulseUs = clampEscPulseUs(pulseUs);
+  const uint32_t duty = escPulseUsToDuty(clampedPulseUs);
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
+  ledcWrite(BLDC_SIGNAL_PIN, duty);
+#else
+  ledcWrite(ENGINE_PWM_CHANNEL, duty);
+#endif
+}
+
+void setEngineState(bool enabled, int requestedPulseUs = -1) {
+  if (!enabled) {
+    engineOn = false;
+    enginePulseUs = ESC_STOP_US;
+    writeEscPulseUs(enginePulseUs);
+    return;
+  }
+
+  uint16_t targetPulseUs = ESC_SPIN_US;
+  if (requestedPulseUs >= static_cast<int>(ESC_MIN_US) && requestedPulseUs <= static_cast<int>(ESC_MAX_US)) {
+    targetPulseUs = static_cast<uint16_t>(requestedPulseUs);
+  }
+
+  // Give a short startup boost so BLDC can overcome static friction.
+  const uint16_t boostPulseUs = targetPulseUs < ESC_START_BOOST_US ? ESC_START_BOOST_US : targetPulseUs;
+  writeEscPulseUs(boostPulseUs);
+  delay(ESC_START_BOOST_MS);
+
+  engineOn = true;
+  enginePulseUs = targetPulseUs;
+  writeEscPulseUs(enginePulseUs);
+}
+
+void applyEngineFailsafe(const char* reason) {
+  if (!engineOn) {
+    return;
+  }
+
+  setEngineState(false);
+  Serial.print("[ENGINE] FAILSAFE OFF: ");
+  Serial.println(reason);
+}
+
+bool isTurnOnLightsCommand(const char* raw) {
+  String cmd = String(raw);
+  cmd.trim();
+  cmd.toLowerCase();
+  return cmd == "turn on lights" || cmd == "turn on light" || cmd == "start light";
+}
+
+bool isTurnOffLightsCommand(const char* raw) {
+  String cmd = String(raw);
+  cmd.trim();
+  cmd.toLowerCase();
+  return cmd == "turn off lights" || cmd == "turn off light" || cmd == "stop light";
+}
+
+bool isTurnOnEngineCommand(const char* raw) {
+  String cmd = String(raw);
+  cmd.trim();
+  cmd.toLowerCase();
+  return cmd == "turn on engine" || cmd == "start engine" || cmd == "engine on" || cmd == "turn on motor";
+}
+
+bool isTurnOffEngineCommand(const char* raw) {
+  String cmd = String(raw);
+  cmd.trim();
+  cmd.toLowerCase();
+  return cmd == "turn off engine" || cmd == "stop engine" || cmd == "engine off" || cmd == "turn off motor";
 }
 
 void handleControlMessage(const JsonDocument& doc) {
   const char* action = doc["action"] | "";
+  const char* command = doc["command"] | doc["text"] | "";
   const int value = doc["value"] | -1;
 
-  if (strcmp(action, "led_on") == 0) {
+  if (strcmp(action, "led_on") == 0 || strcmp(action, "turn_on_lights") == 0 || isTurnOnLightsCommand(command)) {
+    ledOn = true;
     digitalWrite(LED_BUILTIN, HIGH);
+    Serial.println("[LED] ON (voice command: turn on lights)");
     publishStatus("led_on");
     return;
   }
 
-  if (strcmp(action, "led_off") == 0) {
+  if (strcmp(action, "led_off") == 0 || strcmp(action, "turn_off_lights") == 0 || isTurnOffLightsCommand(command)) {
+    ledOn = false;
     digitalWrite(LED_BUILTIN, LOW);
+    Serial.println("[LED] OFF (voice command: turn off lights)");
     publishStatus("led_off");
     return;
   }
 
-  if (strcmp(action, "servo_right") == 0) {
-    setServoAngle(value >= 0 ? value : SERVO_RIGHT_DEG);
-    publishStatus("servo_moved_right", servoAngle);
-    return;
-  }
-
-  if (strcmp(action, "servo_left") == 0) {
-    setServoAngle(value >= 0 ? value : SERVO_LEFT_DEG);
-    publishStatus("servo_moved_left", servoAngle);
-    return;
-  }
-
-  if (strcmp(action, "engine_on") == 0) {
-    engineEnabled = true;
-    digitalWrite(ENGINE_PIN, HIGH);
+  if (strcmp(action, "engine_on") == 0 || strcmp(action, "turn_on_engine") == 0 || isTurnOnEngineCommand(command)) {
+    setEngineState(true, value);
+    Serial.println("[ENGINE] ON (voice command: turn on engine)");
+    Serial.print("[ENGINE] Pulse(us): ");
+    Serial.println(enginePulseUs);
     publishStatus("engine_on");
     return;
   }
 
-  if (strcmp(action, "engine_off") == 0) {
-    engineEnabled = false;
-    digitalWrite(ENGINE_PIN, LOW);
-    setThrottle(THROTTLE_MIN);
+  if (strcmp(action, "engine_off") == 0 || strcmp(action, "turn_off_engine") == 0 || isTurnOffEngineCommand(command)) {
+    setEngineState(false);
+    Serial.println("[ENGINE] OFF (voice command: turn off engine)");
     publishStatus("engine_off");
     return;
   }
 
-  if (strcmp(action, "throttle_up") == 0) {
-    const int nextThrottle = value >= 0 ? value : throttleValue + 15;
-    setThrottle(clampThrottle(nextThrottle));
-    publishStatus("throttle_up", throttleValue);
-    return;
-  }
-
-  if (strcmp(action, "throttle_down") == 0) {
-    const int nextThrottle = value >= 0 ? value : throttleValue - 15;
-    setThrottle(clampThrottle(nextThrottle));
-    publishStatus("throttle_down", throttleValue);
-    return;
-  }
-
-  if (strcmp(action, "emergency_stop") == 0) {
-    applyEmergencyStop();
-    publishStatus("emergency_stop");
-    return;
-  }
-
-  publishStatus("unknown_action");
+  publishStatus("ignored_command");
 }
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
@@ -188,8 +221,20 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
 void ensureWifiConnected() {
   if (WiFi.status() == WL_CONNECTED) {
+    if (!wifiConnectionLogged) {
+      Serial.print("[WiFi] Connected. IP: ");
+      Serial.println(WiFi.localIP());
+      wifiConnectionLogged = true;
+    }
     return;
   }
+
+  if (wifiConnectionLogged) {
+    Serial.println("[WiFi] Disconnected.");
+    wifiConnectionLogged = false;
+  }
+
+  applyEngineFailsafe("WiFi disconnected");
 
   const unsigned long now = millis();
   if (now - lastWifiAttemptMs < 5000) {
@@ -198,13 +243,37 @@ void ensureWifiConnected() {
 
   lastWifiAttemptMs = now;
   WiFi.mode(WIFI_STA);
+  Serial.println("[WiFi] Connecting...");
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 }
 
 void ensureMqttConnected() {
-  if (mqttClient.connected() || WiFi.status() != WL_CONNECTED) {
+  if (WiFi.status() != WL_CONNECTED) {
+    if (mqttConnectionLogged) {
+      Serial.println("[MQTT] Disconnected (WiFi unavailable).");
+      mqttConnectionLogged = false;
+    }
+    applyEngineFailsafe("MQTT unavailable (WiFi down)");
     return;
   }
+
+  if (mqttClient.connected()) {
+    if (!mqttConnectionLogged) {
+      Serial.print("[MQTT] Connected to ");
+      Serial.print(MQTT_HOST);
+      Serial.print(":");
+      Serial.println(MQTT_PORT);
+      mqttConnectionLogged = true;
+    }
+    return;
+  }
+
+  if (mqttConnectionLogged) {
+    Serial.println("[MQTT] Disconnected.");
+    mqttConnectionLogged = false;
+  }
+
+  applyEngineFailsafe("MQTT disconnected");
 
   const unsigned long now = millis();
   if (now - lastMqttAttemptMs < 2000) {
@@ -214,32 +283,49 @@ void ensureMqttConnected() {
   lastMqttAttemptMs = now;
 
   const bool connected = (strlen(MQTT_USER) > 0)
-    ? mqttClient.connect("zara-esp32-flight", MQTT_USER, MQTT_PASSWORD)
-    : mqttClient.connect("zara-esp32-flight");
+    ? mqttClient.connect(mqttClientId, MQTT_USER, MQTT_PASSWORD)
+    : mqttClient.connect(mqttClientId);
 
   if (!connected) {
+    Serial.print("[MQTT] Connect failed, state=");
+    Serial.println(mqttClient.state());
+    applyEngineFailsafe("MQTT connect failed");
     return;
   }
 
   mqttClient.subscribe(TOPIC_CONTROL, 1);
+  Serial.print("[MQTT] Connected to ");
+  Serial.print(MQTT_HOST);
+  Serial.print(":");
+  Serial.println(MQTT_PORT);
+  mqttConnectionLogged = true;
   publishStatus("controller_online");
 }
 
 void setup() {
+  Serial.begin(115200);
+  delay(200);
+  Serial.println("[BOOT] LED voice controller starting...");
+
+  const uint64_t chipId = ESP.getEfuseMac();
+  snprintf(mqttClientId, sizeof(mqttClientId), "zara-esp32-%04X", static_cast<unsigned int>(chipId & 0xFFFF));
+  Serial.print("[MQTT] Client ID: ");
+  Serial.println(mqttClientId);
+
   pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(ENGINE_PIN, OUTPUT);
-
   digitalWrite(LED_BUILTIN, LOW);
-  digitalWrite(ENGINE_PIN, LOW);
+  ledOn = false;
 
-  ledcSetup(PWM_CHANNEL, PWM_FREQUENCY_HZ, PWM_RESOLUTION_BITS);
-  ledcAttachPin(THROTTLE_PWM_PIN, PWM_CHANNEL);
-  setThrottle(THROTTLE_MIN);
+  initEnginePwm();
+  if (!enginePwmReady) {
+    Serial.println("[ENGINE] PWM init failed.");
+  }
+  setEngineState(false);
+  Serial.println("[ENGINE] Arming ESC...");
+  delay(ESC_ARM_DELAY_MS);
+  Serial.println("[ENGINE] ESC ready.");
 
-  rudderServo.setPeriodHertz(50);
-  rudderServo.attach(SERVO_PIN, 500, 2400);
-  setServoAngle(SERVO_CENTER_DEG);
-
+  WiFi.setSleep(false);
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setCallback(mqttCallback);
   mqttClient.setBufferSize(512);
@@ -252,6 +338,12 @@ void loop() {
   ensureMqttConnected();
 
   if (mqttClient.connected()) {
-    mqttClient.loop();
+    if (!mqttClient.loop()) {
+      Serial.print("[MQTT] Loop lost connection, state=");
+      Serial.println(mqttClient.state());
+      mqttClient.disconnect();
+      mqttConnectionLogged = false;
+      applyEngineFailsafe("MQTT loop disconnected");
+    }
   }
 }
