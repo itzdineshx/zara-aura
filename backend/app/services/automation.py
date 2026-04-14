@@ -199,11 +199,16 @@ class AutomationEngine:
         re.IGNORECASE,
     )
     FLIGHT_LED_ON_RE = re.compile(
-        r"\b(start|turn|switch)\s+(on\s+)?(the\s+)?(light|lights|led|leds)\b|\b(light|lights|led|leds)\s+on\b",
+        r"\b(?:turn|switch)\s+on\s+(?:the\s+|all\s+)?(?:light|lights|led|leds)\b"
+        r"|\bstart\s+(?:the\s+|all\s+)?(?:light|lights|led|leds)\b"
+        r"|\b(?:light|lights|led|leds)\s+on\b",
         re.IGNORECASE,
     )
     FLIGHT_LED_OFF_RE = re.compile(
-        r"\b(stop|turn|switch)\s+(off\s+)?(the\s+)?(light|lights|led|leds)\b|\b(light|lights|led|leds)\s+off\b",
+        r"\b(?:turn|switch)\s+(?:off|of)\s+(?:the\s+|all\s+)?(?:light|lights|led|leds)\b"
+        r"|\bstop\s+(?:the\s+|all\s+)?(?:light|lights|led|leds)\b"
+        r"|\b(?:turn|switch|stop)\s+(?:the\s+|all\s+)?(?:light|lights|led|leds)\s+(?:off|of)\b"
+        r"|\b(?:light|lights|led|leds)\s+(?:off|of)\b",
         re.IGNORECASE,
     )
     FLIGHT_SERVO_RIGHT_RE = re.compile(r"\b(turn|move)\s+right\b|\bservo\s+right\b", re.IGNORECASE)
