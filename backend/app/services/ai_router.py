@@ -23,11 +23,20 @@ class AIRouterService:
             r"\b("
             r"do not understand this language|"
             r"don't understand this language|"
+            r"dont understand this language|"
             r"cannot understand this language|"
+            r"do not understand|"
+            r"don't understand|"
+            r"dont understand|"
+            r"i am sorry[, ]+i (do not|don't|dont) understand|"
+            r"i'm sorry[, ]+i (do not|don't|dont) understand|"
             r"only understand english|"
             r"i only understand english|"
             r"please use english|"
             r"please speak english|"
+            r"please speak in english|"
+            r"could you please speak in english|"
+            r"please speak in english[, ]+hindi[, ]+tamil[, ]+telugu[, ]+or[ ,]+malayalam|"
             r"please use english[, ]+hindi[, ]+tamil[, ]+telugu[, ]+or[ ,]+malayalam"
             r")\b"
         ),
@@ -64,7 +73,10 @@ class AIRouterService:
         cache_key = f"{mode}:{language_key}:{normalized.lower()}"
         cached = await self._cache_get(cache_key)
         if cached is not None:
-            return cached, "openrouter"
+            if self._is_language_refusal(cached):
+                await self._cache_delete(cache_key)
+            else:
+                return cached, "openrouter"
 
         if mode == "offline":
             answer, source = await self._offline_only(normalized, response_language=response_language)
@@ -98,6 +110,10 @@ class AIRouterService:
     async def _cache_set(self, key: str, value: str) -> None:
         async with self._cache_lock:
             self.cache[key] = value
+
+    async def _cache_delete(self, key: str) -> None:
+        async with self._cache_lock:
+            self.cache.pop(key, None)
 
     async def _offline_only(self, text: str, response_language: str | None = None) -> tuple[str, RouteSource]:
         primary_model = self.settings.ollama_model
@@ -202,10 +218,37 @@ class AIRouterService:
             return False
 
         # Keep this check focused on short refusal templates to avoid false positives.
-        if len(normalized) > 220:
+        if len(normalized) > 320:
             return False
 
-        return bool(self._LANGUAGE_REFUSAL_RE.search(normalized))
+        lowered = normalized.lower()
+
+        if self._LANGUAGE_REFUSAL_RE.search(lowered):
+            return True
+
+        refusal_markers = (
+            "i am sorry",
+            "i'm sorry",
+            "i do not understand",
+            "i don't understand",
+            "cannot understand",
+            "can't understand",
+            "only understand",
+            "only respond",
+            "cannot respond",
+            "can't respond",
+            "please speak",
+            "please use",
+        )
+
+        has_refusal_marker = any(marker in lowered for marker in refusal_markers)
+        if not has_refusal_marker:
+            return False
+
+        supported_language_names = ("english", "hindi", "tamil", "telugu", "malayalam")
+        mentioned_languages = sum(1 for name in supported_language_names if name in lowered)
+
+        return mentioned_languages >= 2
 
     async def _recover_from_language_refusal(
         self,

@@ -368,22 +368,78 @@ const Index = () => {
       const actionStatus = actionString(action.status) ?? "planned";
       const mcpTool = actionString(action.mcp_tool);
       const target = actionString(action.target) ?? actionString(action.mcp_url);
+      const fallbackTarget = actionString(action.fallback_target);
+      const spotifyUri = actionString(action.spotify_uri);
       const actionError = actionString(action.error);
       const actionLanguage = actionString(action.language) ?? languageCode;
+      const isMediaAction =
+        actionType === "spotify_play" ||
+        actionType === "spotify_music" ||
+        actionType === "open_spotify" ||
+        actionType === "youtube_play" ||
+        actionType === "open_youtube";
+      const canClientExecuteOpenUrl = settings.automation.routines && mcpTool === "open_url" && !!target;
 
       if (actionStatus === "executed" || actionStatus === "executed_fallback") {
         return localizeActionRuntimeHint(actionLanguage, actionType, actionStatus);
+      }
+
+      if (actionStatus === "failed" && canClientExecuteOpenUrl) {
+        const navigateUrl = fallbackTarget ?? target;
+        if (isMediaAction) {
+          if (spotifyUri) {
+            const spotifyPopup = window.open(spotifyUri, "_blank", "noopener,noreferrer");
+            if (spotifyPopup) {
+              return localizeActionRuntimeHint(actionLanguage, actionType, "executed_fallback");
+            }
+          }
+
+          const mediaPopup = window.open(target, "_blank", "noopener,noreferrer");
+          if (mediaPopup) {
+            return localizeActionRuntimeHint(actionLanguage, actionType, "executed_fallback");
+          }
+
+          window.location.assign(navigateUrl);
+          return localizeActionRuntimeHint(actionLanguage, actionType, "executed_fallback");
+        }
+
+        const popup = window.open(target, "_blank", "noopener,noreferrer");
+        if (popup) {
+          return localizeActionRuntimeHint(actionLanguage, actionType, "executed_fallback");
+        }
+
+        window.location.assign(navigateUrl);
+        return localizeActionRuntimeHint(actionLanguage, actionType, "executed_fallback");
       }
 
       if (actionStatus === "failed") {
         return localizeActionRuntimeHint(actionLanguage, actionType, actionStatus, actionError ?? undefined);
       }
 
-      if (settings.automation.routines && mcpTool === "open_url" && target && actionStatus === "planned") {
+      if (canClientExecuteOpenUrl && actionStatus === "planned") {
+        if (isMediaAction) {
+          if (spotifyUri) {
+            const spotifyPopup = window.open(spotifyUri, "_blank", "noopener,noreferrer");
+            if (spotifyPopup) {
+              return localizeActionRuntimeHint(actionLanguage, actionType, "executed");
+            }
+          }
+
+          const mediaPopup = window.open(target, "_blank", "noopener,noreferrer");
+          if (mediaPopup) {
+            return localizeActionRuntimeHint(actionLanguage, actionType, "executed");
+          }
+
+          const navigateUrl = fallbackTarget ?? target;
+          window.location.assign(navigateUrl);
+          return localizeActionRuntimeHint(actionLanguage, actionType, "executed");
+        }
+
         const popup = window.open(target, "_blank", "noopener,noreferrer");
         if (popup) {
           return localizeActionRuntimeHint(actionLanguage, actionType, "executed");
         }
+
         return localizeActionRuntimeHint(actionLanguage, actionType, "blocked_popup");
       }
 

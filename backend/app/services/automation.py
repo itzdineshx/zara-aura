@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import logging
 import re
 import urllib.parse
 import urllib.request
@@ -12,6 +13,9 @@ from app.config import Settings
 
 if TYPE_CHECKING:
     from app.services.mcp_service import MCPService
+
+
+logger = logging.getLogger(__name__)
 
 
 class AutomationEngine:
@@ -123,27 +127,60 @@ class AutomationEngine:
     )
 
     YOUTUBE_RE = re.compile(
-        r"\b(open|launch|start|visit|go to)\s+(youtube|yt)\b|\b(youtube|yt)\s+(open|launch)\b",
+        r"\b(open|launch|start|visit|go to)\s+(youtube|yt)\b|\b(youtube|yt)\s+(open|launch|start|visit)\b",
         re.IGNORECASE,
     )
     YOUTUBE_PLAY_RE = re.compile(
         r"\b(play|put on|search|find|look up)\s+(?P<query>.+?)\s+(on|in)\s+(youtube|yt)\b",
         re.IGNORECASE,
     )
+    YOUTUBE_PLAY_TAIL_RE = re.compile(
+        r"\b(play|put on|search|find|look up)\s+(?P<query>.+?)\s+(youtube|yt)\b",
+        re.IGNORECASE,
+    )
+    YOUTUBE_PLAY_PREFIX_RE = re.compile(
+        r"\b(youtube|yt)\s+(play|put on|search|find|look up)\s+(?P<query>.+)\b",
+        re.IGNORECASE,
+    )
+    YOUTUBE_SEARCH_PLAY_RE = re.compile(
+        r"\bsearch\s+(?P<query>.+?)\s+(on|in)?\s*(youtube|yt)\b(?:\s+and\s+play|\s+play)?",
+        re.IGNORECASE,
+    )
     SPOTIFY_RE = re.compile(
-        r"\b(open|launch|start|visit)\s+spotify\b",
+        r"\b(open|launch|start|visit)\s+spotify\b|\bspotify\s+(open|launch|start|visit)\b",
         re.IGNORECASE,
     )
     SPOTIFY_PLAY_RE = re.compile(
         r"\b(play|put on|search|find)\s+(?P<query>.+?)\s+(on|in)\s+spotify\b",
         re.IGNORECASE,
     )
-    SPOTIFY_MUSIC_RE = re.compile(r"\b(play|start)\s+(some\s+)?(music|songs?)\s+(on|in)\s+spotify\b", re.IGNORECASE)
-    MAPS_RE = re.compile(r"\b(open|launch|start)\s+(google\s+)?maps\b", re.IGNORECASE)
+    SPOTIFY_PLAY_TAIL_RE = re.compile(
+        r"\b(play|put on|search|find)\s+(?P<query>.+?)\s+spotify\b",
+        re.IGNORECASE,
+    )
+    SPOTIFY_PLAY_PREFIX_RE = re.compile(
+        r"\bspotify\s+(play|put on|search|find)\s+(?P<query>.+)\b",
+        re.IGNORECASE,
+    )
+    DEFAULT_SPOTIFY_PLAY_RE = re.compile(
+        r"\b(play|put on|start)\s+(?P<query>.+)$",
+        re.IGNORECASE,
+    )
+    SPOTIFY_SEARCH_PLAY_RE = re.compile(
+        r"\bsearch\s+(?P<query>.+?)\s+(on|in)?\s*spotify\b(?:\s+and\s+play|\s+play)?",
+        re.IGNORECASE,
+    )
+    SPOTIFY_MUSIC_RE = re.compile(
+        r"\b(play|start)\s+(some\s+)?(music|songs?)\s*((on|in)\s+)?spotify\b|\bspotify\s+(play|start)\s+(some\s+)?(music|songs?)\b",
+        re.IGNORECASE,
+    )
+    MAPS_RE = re.compile(r"\b(open|launch|start)\s+(google\s+)?maps\b|\b(google\s+)?maps\s+(open|launch|start)\b", re.IGNORECASE)
     NAVIGATE_RE = re.compile(r"\b(navigate|directions?|route)\s+(to\s+)?(?P<destination>.+)$", re.IGNORECASE)
-    GMAIL_RE = re.compile(r"\b(open|launch)\s+gmail\b", re.IGNORECASE)
-    GOOGLE_RE = re.compile(r"\b(open|launch)\s+google\b", re.IGNORECASE)
-    GITHUB_RE = re.compile(r"\b(open|launch)\s+github\b", re.IGNORECASE)
+    TAKE_ME_TO_RE = re.compile(r"\b(take me to|show me route to)\s+(?P<destination>.+)$", re.IGNORECASE)
+    MAPS_TO_RE = re.compile(r"\bmaps\s+to\s+(?P<destination>.+)$", re.IGNORECASE)
+    GMAIL_RE = re.compile(r"\b(open|launch)\s+gmail\b|\bgmail\s+(open|launch)\b", re.IGNORECASE)
+    GOOGLE_RE = re.compile(r"\b(open|launch)\s+google\b|\bgoogle\s+(open|launch)\b", re.IGNORECASE)
+    GITHUB_RE = re.compile(r"\b(open|launch)\s+github\b|\bgithub\s+(open|launch)\b", re.IGNORECASE)
     GENERIC_SITE_RE = re.compile(
         r"\b(open|launch|visit)\s+(?P<domain>(?:[a-z0-9-]+\.)+[a-z]{2,})(?P<path>/[^\s]*)?\b",
         re.IGNORECASE,
@@ -159,6 +196,7 @@ class AutomationEngine:
         r"\b(turn|switch|set|disable)\s+off\s+(the\s+)?engine\b|\bstop\s+(the\s+)?engine\b|\bengine\s+off\b",
         re.IGNORECASE,
     )
+    YOUTUBE_VIDEO_ID_RE = re.compile(r'"videoId":"(?P<id>[A-Za-z0-9_-]{11})"')
 
     def __init__(self, settings: Settings, mcp_service: MCPService | None = None) -> None:
         self.settings = settings
@@ -177,21 +215,22 @@ class AutomationEngine:
             result = await self._trigger_engine(turn_on=False)
             return self._with_language(result, language_code)
 
-        spotify_play_match = self.SPOTIFY_PLAY_RE.search(normalized)
-        if spotify_play_match:
-            query = spotify_play_match.group("query").strip()
-            if query:
-                url = f"https://open.spotify.com/search/{urllib.parse.quote(query)}"
-                result = await self._open_url(url, action_type="spotify_play", intent="Play track on Spotify")
-                result["query"] = query
-                return self._with_language(result, language_code)
-
         if self.SPOTIFY_MUSIC_RE.search(normalized):
             result = await self._open_url(
                 "https://open.spotify.com/genre/0JQ5DAqbMKFQ00XGBls6ym",
                 action_type="spotify_music",
                 intent="Play music on Spotify",
             )
+            return self._with_language(result, language_code)
+
+        spotify_query = self._extract_spotify_query(normalized)
+        if spotify_query:
+            url = f"https://open.spotify.com/search/{urllib.parse.quote(spotify_query)}/tracks"
+            result = await self._open_url(url, action_type="spotify_play", intent="Play track on Spotify")
+            result["query"] = spotify_query
+            result["spotify_uri"] = f"spotify:search:{urllib.parse.quote(spotify_query)}"
+            result["fallback_target"] = url
+            result["autoplay"] = True
             return self._with_language(result, language_code)
 
         if self.SPOTIFY_RE.search(normalized):
@@ -202,27 +241,47 @@ class AutomationEngine:
             )
             return self._with_language(result, language_code)
 
-        youtube_play_match = self.YOUTUBE_PLAY_RE.search(normalized)
-        if youtube_play_match:
-            query = youtube_play_match.group("query").strip()
-            if query:
-                url = f"https://www.youtube.com/results?search_query={urllib.parse.quote_plus(query)}"
-                result = await self._open_url(url, action_type="youtube_play", intent="Play video on YouTube")
-                result["query"] = query
+        youtube_query = self._extract_youtube_query(normalized)
+        if youtube_query:
+            url, video_id = await self._resolve_youtube_play_url(youtube_query)
+            result = await self._open_url(url, action_type="youtube_play", intent="Play video on YouTube")
+            result["query"] = youtube_query
+            result["autoplay"] = True
+            if video_id:
+                result["video_id"] = video_id
+            return self._with_language(result, language_code)
+
+        default_spotify_query = self._extract_default_spotify_query(normalized)
+        if default_spotify_query:
+            if default_spotify_query == "__SPOTIFY_MUSIC__":
+                result = await self._open_url(
+                    "https://open.spotify.com/genre/0JQ5DAqbMKFQ00XGBls6ym",
+                    action_type="spotify_music",
+                    intent="Play music on Spotify",
+                )
+                result["autoplay"] = True
+                result["default_platform"] = "spotify"
                 return self._with_language(result, language_code)
+
+            url = f"https://open.spotify.com/search/{urllib.parse.quote(default_spotify_query)}/tracks"
+            result = await self._open_url(url, action_type="spotify_play", intent="Play track on Spotify")
+            result["query"] = default_spotify_query
+            result["spotify_uri"] = f"spotify:search:{urllib.parse.quote(default_spotify_query)}"
+            result["fallback_target"] = url
+            result["autoplay"] = True
+            result["default_platform"] = "spotify"
+            return self._with_language(result, language_code)
 
         if self.YOUTUBE_RE.search(normalized):
             result = await self._open_url("https://www.youtube.com", action_type="open_youtube", intent="Open YouTube")
             return self._with_language(result, language_code)
 
-        navigate_match = self.NAVIGATE_RE.search(normalized)
-        if navigate_match:
-            destination = navigate_match.group("destination").strip()
-            if destination:
-                url = f"https://www.google.com/maps/search/{urllib.parse.quote_plus(destination)}"
-                result = await self._open_url(url, action_type="open_maps", intent="Open map directions")
-                result["destination"] = destination
-                return self._with_language(result, language_code)
+        destination = self._extract_maps_destination(normalized)
+        if destination:
+            url = f"https://www.google.com/maps/search/{urllib.parse.quote_plus(destination)}"
+            result = await self._open_url(url, action_type="open_maps", intent="Open map directions")
+            result["destination"] = destination
+            return self._with_language(result, language_code)
 
         if self.MAPS_RE.search(normalized):
             result = await self._open_url(
@@ -379,3 +438,142 @@ class AutomationEngine:
             payload["error"] = str(exc)
 
         return payload
+
+    async def _resolve_youtube_play_url(self, query: str) -> tuple[str, str | None]:
+        search_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote_plus(query)}"
+
+        try:
+            video_id = await asyncio.to_thread(self._fetch_first_youtube_video_id, search_url)
+        except Exception as exc:
+            logger.debug("YouTube video resolution failed for query=%s: %s", query, exc)
+            video_id = None
+
+        if video_id:
+            return f"https://www.youtube.com/watch?v={video_id}&autoplay=1", video_id
+
+        # Fallback to videos tab search when direct video lookup fails.
+        return f"{search_url}&sp=EgIQAQ%253D%253D", None
+
+    def _fetch_first_youtube_video_id(self, search_url: str) -> str | None:
+        request = urllib.request.Request(search_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(request, timeout=4) as response:
+            page = response.read().decode("utf-8", errors="ignore")
+
+        seen: set[str] = set()
+        for match in self.YOUTUBE_VIDEO_ID_RE.finditer(page):
+            candidate = match.group("id")
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            return candidate
+
+        return None
+
+    def _sanitize_media_query(self, query: str, platform: str) -> str:
+        cleaned = " ".join(query.strip().split())
+        cleaned = re.sub(r"^(and\s+play|and\s+search|play\s+and\s+search)\s+", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"^search\s+", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"^(the\s+song|song|songs?)\s+", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(
+            r"^(some|any)\s+(songs?|music|videos?)\s+(from|of|by)\s+",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(r"^(songs?|music|videos?)\s+(from|of|by)\s+", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"^(some|any)\s+", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s+(and\s+play|play\s+it|right\s+now|please)$", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s+(on|in)\s+(spotify|youtube|yt)$", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s+(spotify|youtube|yt)$", "", cleaned, flags=re.IGNORECASE)
+        cleaned = cleaned.strip(" .,!?")
+
+        lower_cleaned = cleaned.lower()
+
+        if platform == "spotify" and lower_cleaned in {"music", "song", "songs", "track", "tracks"}:
+            return ""
+
+        if platform == "youtube" and lower_cleaned in {"video", "videos", "song", "songs", "music"}:
+            return "latest music video"
+
+        if cleaned:
+            return cleaned
+
+        return "latest songs" if platform == "spotify" else "latest music video"
+
+    def _extract_spotify_query(self, normalized: str) -> str | None:
+        patterns = (
+            self.SPOTIFY_PLAY_RE,
+            self.SPOTIFY_PLAY_TAIL_RE,
+            self.SPOTIFY_PLAY_PREFIX_RE,
+            self.SPOTIFY_SEARCH_PLAY_RE,
+        )
+
+        for pattern in patterns:
+            match = pattern.search(normalized)
+            if not match:
+                continue
+
+            query = self._sanitize_media_query(match.group("query"), platform="spotify")
+            if query:
+                return query
+
+        return None
+
+    def _extract_youtube_query(self, normalized: str) -> str | None:
+        patterns = (
+            self.YOUTUBE_PLAY_RE,
+            self.YOUTUBE_PLAY_TAIL_RE,
+            self.YOUTUBE_PLAY_PREFIX_RE,
+            self.YOUTUBE_SEARCH_PLAY_RE,
+        )
+
+        for pattern in patterns:
+            match = pattern.search(normalized)
+            if not match:
+                continue
+
+            query = self._sanitize_media_query(match.group("query"), platform="youtube")
+            if query:
+                return query
+
+        return None
+
+    def _extract_maps_destination(self, normalized: str) -> str | None:
+        patterns = (self.NAVIGATE_RE, self.TAKE_ME_TO_RE, self.MAPS_TO_RE)
+        for pattern in patterns:
+            match = pattern.search(normalized)
+            if not match:
+                continue
+
+            destination = " ".join((match.group("destination") or "").strip().split())
+            destination = re.sub(r"\s+(in\s+)?maps?$", "", destination, flags=re.IGNORECASE).strip(" .,!?")
+            if destination:
+                return destination
+
+        return None
+
+    def _extract_default_spotify_query(self, normalized: str) -> str | None:
+        match = self.DEFAULT_SPOTIFY_PLAY_RE.search(normalized)
+        if not match:
+            return None
+
+        raw_query = " ".join(match.group("query").strip().split())
+        if not raw_query:
+            return None
+
+        # Respect explicit platform/service commands handled elsewhere.
+        if re.search(
+            r"\b(youtube|yt|video|videos|maps?|navigate|route|direction|gmail|github|google|search\s+for|web\s+search)\b",
+            raw_query,
+            flags=re.IGNORECASE,
+        ):
+            return None
+
+        if re.fullmatch(r"(music|songs?|playlist)", raw_query, flags=re.IGNORECASE):
+            return "__SPOTIFY_MUSIC__"
+
+        query = self._sanitize_media_query(raw_query, platform="spotify")
+        if not query:
+            return None
+
+        return query

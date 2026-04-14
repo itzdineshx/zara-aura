@@ -120,6 +120,123 @@ def _merge_voice_language_detection(
     return text_detected
 
 
+def _is_browser_action(action: dict[str, object] | None) -> bool:
+    if not action:
+        return False
+
+    action_type = str(action.get("type") or "").strip().lower()
+    return action_type in {
+        "spotify_play",
+        "spotify_music",
+        "open_spotify",
+        "youtube_play",
+        "open_youtube",
+        "open_maps",
+        "open_gmail",
+        "open_github",
+        "open_google",
+        "open_website",
+        "web_search",
+    }
+
+
+def _build_browser_action_response(action: dict[str, object], language_code: str) -> str:
+    action_type = str(action.get("type") or "").strip().lower()
+    query = str(action.get("query") or "").strip()
+    destination = str(action.get("destination") or "").strip()
+    domain = str(action.get("domain") or "").strip()
+    is_spotify_action = "spotify" in action_type
+    is_youtube_action = "youtube" in action_type
+
+    if language_code == "hi":
+        if is_spotify_action:
+            return f"ठीक है, मैं Spotify पर {query} चला रहा हूं।" if query else "ठीक है, मैं Spotify खोल रहा हूं।"
+        if is_youtube_action:
+            return f"ठीक है, मैं YouTube पर {query} वीडियो चला रहा हूं।" if query else "ठीक है, मैं YouTube खोल रहा हूं।"
+        if action_type == "open_maps":
+            return f"ठीक है, मैं {destination} के लिए मैप खोल रहा हूं।" if destination else "ठीक है, मैं Google Maps खोल रहा हूं।"
+        if action_type == "open_gmail":
+            return "ठीक है, मैं Gmail खोल रहा हूं।"
+        if action_type == "open_github":
+            return "ठीक है, मैं GitHub खोल रहा हूं।"
+        if action_type == "open_google":
+            return "ठीक है, मैं Google खोल रहा हूं।"
+        if action_type == "open_website":
+            return f"ठीक है, मैं {domain} खोल रहा हूं।" if domain else "ठीक है, वेबसाइट खोल रहा हूं।"
+        if action_type == "web_search":
+            return f"ठीक है, मैं {query} के लिए वेब सर्च कर रहा हूं।" if query else "ठीक है, वेब सर्च खोल रहा हूं।"
+    elif language_code == "ta":
+        if is_spotify_action:
+            return f"சரி, Spotify-ல் {query} பாடலை இப்போது இயக்குகிறேன்." if query else "சரி, Spotify-ஐ திறக்கிறேன்."
+        if is_youtube_action:
+            return f"சரி, YouTube-ல் {query} வீடியோவை இப்போது இயக்குகிறேன்." if query else "சரி, YouTube-ஐ திறக்கிறேன்."
+        if action_type == "open_maps":
+            return f"சரி, {destination} க்கு Maps திறக்கிறேன்." if destination else "சரி, Google Maps திறக்கிறேன்."
+        if action_type == "open_gmail":
+            return "சரி, Gmail திறக்கிறேன்."
+        if action_type == "open_github":
+            return "சரி, GitHub திறக்கிறேன்."
+        if action_type == "open_google":
+            return "சரி, Google திறக்கிறேன்."
+        if action_type == "open_website":
+            return f"சரி, {domain} தளத்தை திறக்கிறேன்." if domain else "சரி, இணையதளத்தை திறக்கிறேன்."
+        if action_type == "web_search":
+            return f"சரி, {query} க்கு வெப் தேடல் செய்கிறேன்." if query else "சரி, வெப் தேடல் திறக்கிறேன்."
+    elif language_code == "te":
+        if is_spotify_action:
+            return f"సరే, Spotify లో {query} ప్లే చేస్తున్నాను." if query else "సరే, Spotify ను తెరుస్తున్నాను."
+        if is_youtube_action:
+            return f"సరే, YouTube లో {query} వీడియో ప్లే చేస్తున్నాను." if query else "సరే, YouTube ను తెరుస్తున్నాను."
+        if action_type == "open_maps":
+            return f"సరే, {destination} కోసం మ్యాప్స్ తెరుస్తున్నాను." if destination else "సరే, Google Maps తెరుస్తున్నాను."
+        if action_type == "open_gmail":
+            return "సరే, Gmail తెరుస్తున్నాను."
+        if action_type == "open_github":
+            return "సరే, GitHub తెరుస్తున్నాను."
+        if action_type == "open_google":
+            return "సరే, Google తెరుస్తున్నాను."
+        if action_type == "open_website":
+            return f"సరే, {domain} వెబ్‌సైట్ తెరుస్తున్నాను." if domain else "సరే, వెబ్‌సైట్ తెరుస్తున్నాను."
+        if action_type == "web_search":
+            return f"సరే, {query} కోసం వెబ్ సెర్చ్ చేస్తున్నాను." if query else "సరే, వెబ్ సెర్చ్ తెరుస్తున్నాను."
+    elif language_code == "ml":
+        if is_spotify_action:
+            return f"ശരി, Spotify-ൽ {query} ഇപ്പോൾ പ്ലേ ചെയ്യുന്നു." if query else "ശരി, Spotify തുറക്കുന്നു."
+        if is_youtube_action:
+            return f"ശരി, YouTube-ൽ {query} വീഡിയോ ഇപ്പോൾ പ്ലേ ചെയ്യുന്നു." if query else "ശരി, YouTube തുറക്കുന്നു."
+        if action_type == "open_maps":
+            return f"ശരി, {destination} ലേക്കുള്ള മാപ്പ് തുറക്കുന്നു." if destination else "ശരി, Google Maps തുറക്കുന്നു."
+        if action_type == "open_gmail":
+            return "ശരി, Gmail തുറക്കുന്നു."
+        if action_type == "open_github":
+            return "ശരി, GitHub തുറക്കുന്നു."
+        if action_type == "open_google":
+            return "ശരി, Google തുറക്കുന്നു."
+        if action_type == "open_website":
+            return f"ശരി, {domain} വെബ്സൈറ്റ് തുറക്കുന്നു." if domain else "ശരി, വെബ്സൈറ്റ് തുറക്കുന്നു."
+        if action_type == "web_search":
+            return f"ശരി, {query} ന് വെബ് തിരയൽ നടത്തുന്നു." if query else "ശരി, വെബ് തിരയൽ തുറക്കുന്നു."
+
+    if is_spotify_action:
+        return f"Okay, playing {query} on Spotify now." if query else "Okay, opening Spotify now."
+    if is_youtube_action:
+        return f"Okay, playing {query} on YouTube now." if query else "Okay, opening YouTube now."
+    if action_type == "open_maps":
+        return f"Okay, opening maps for {destination}." if destination else "Okay, opening Google Maps now."
+    if action_type == "open_gmail":
+        return "Okay, opening Gmail now."
+    if action_type == "open_github":
+        return "Okay, opening GitHub now."
+    if action_type == "open_google":
+        return "Okay, opening Google now."
+    if action_type == "open_website":
+        return f"Okay, opening {domain} now." if domain else "Okay, opening the website now."
+    if action_type == "web_search":
+        return f"Okay, searching the web for {query} now." if query else "Okay, opening web search now."
+
+    return "Okay, executing your request now."
+
+
 @dataclass(slots=True)
 class ServiceContainer:
     memory_store: MemoryStore
@@ -235,14 +352,17 @@ async def chat(payload: ChatRequest, background_tasks: BackgroundTasks, request:
     effective_mode: ModeLiteral = payload.mode or await services.mode_state.get_mode()
     history = await services.memory_store.get_messages()
 
-    response_text, _route = await services.ai_router.route_request(
-        text=payload.text,
-        mode=effective_mode,
-        history=history,
-        response_language=response_language.name,
-    )
-
     action = await services.automation_engine.detect_and_execute(payload.text, language_code=response_language.code)
+
+    if _is_browser_action(action):
+        response_text = _build_browser_action_response(action or {}, response_language.code)
+    else:
+        response_text, _route = await services.ai_router.route_request(
+            text=payload.text,
+            mode=effective_mode,
+            history=history,
+            response_language=response_language.name,
+        )
 
     volume = float(payload.volume or 0.0)
     pitch = round(110.0 + (volume * 220.0), 1)
@@ -317,15 +437,18 @@ async def voice(
 
     effective_mode: ModeLiteral = mode or await services.mode_state.get_mode()
     history = await services.memory_store.get_messages()
-
-    response_text, _route = await services.ai_router.route_request(
-        text=transcript,
-        mode=effective_mode,
-        history=history,
-        response_language=response_language.name,
-    )
-
     action = await services.automation_engine.detect_and_execute(transcript, language_code=response_language.code)
+
+    if _is_browser_action(action):
+        response_text = _build_browser_action_response(action or {}, response_language.code)
+    else:
+        response_text, _route = await services.ai_router.route_request(
+            text=transcript,
+            mode=effective_mode,
+            history=history,
+            response_language=response_language.name,
+        )
+
     emotion = services.emotion_service.detect(transcript, audio_features.volume)
 
     await services.memory_store.add_turn(transcript, response_text)
