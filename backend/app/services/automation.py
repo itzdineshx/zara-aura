@@ -23,6 +23,24 @@ logger = logging.getLogger(__name__)
 class AutomationEngine:
     """Safe rule-based automation. No arbitrary command execution."""
 
+    ENGINE_ALIAS_RE = re.compile(
+        r"\b(?:injin|enjin|engin|ingine|injan|njin|enginee|engin)\b",
+        re.IGNORECASE,
+    )
+    ENGINE_SPLIT_ALIAS_RE = re.compile(r"\b(?:in|en)\s+gin\b", re.IGNORECASE)
+    TURN_OR_SWITCH_OF_RE = re.compile(r"\b(turn|switch)\s+of\b", re.IGNORECASE)
+    COMPACT_TURNOFF_RE = re.compile(r"\b(turn|switch)off\b", re.IGNORECASE)
+    ENGINE_OF_RE = re.compile(r"\bengine\s+of\b", re.IGNORECASE)
+    ENGINE_KEYWORD_RE = re.compile(r"\bengine\b", re.IGNORECASE)
+    ENGINE_ON_HINT_RE = re.compile(r"\b(turn|switch|set|enable|start|run|spin)\s+on\b|\bstart\b|\bon\b", re.IGNORECASE)
+    ENGINE_OFF_HINT_RE = re.compile(
+        r"\b(turn|switch|set|disable|stop)\s+off\b|\boff\b|\bstop\b|\bshutdown\b|\bshut\s*down\b",
+        re.IGNORECASE,
+    )
+    LIGHT_KEYWORD_RE = re.compile(r"\b(light|lights|led|leds)\b", re.IGNORECASE)
+    LIGHT_ON_HINT_RE = re.compile(r"\b(turn|switch|start)\s+on\b|\bon\b", re.IGNORECASE)
+    LIGHT_OFF_HINT_RE = re.compile(r"\b(turn|switch|stop)\s+off\b|\boff\b", re.IGNORECASE)
+
     COMMAND_REPLACEMENTS: tuple[tuple[str, str], ...] = (
         # Engine intent phrases
         ("engine chalu karo", "turn on engine"),
@@ -449,6 +467,33 @@ class AutomationEngine:
         if self.FLIGHT_THROTTLE_DOWN_RE.search(normalized):
             return "throttle_down"
 
+        fuzzy_action = self._match_flight_action_fuzzy(normalized)
+        if fuzzy_action:
+            return fuzzy_action
+
+        return None
+
+    def _match_flight_action_fuzzy(self, normalized: str) -> str | None:
+        if self.ENGINE_KEYWORD_RE.search(normalized):
+            has_on_hint = bool(self.ENGINE_ON_HINT_RE.search(normalized))
+            has_off_hint = bool(self.ENGINE_OFF_HINT_RE.search(normalized))
+
+            if has_on_hint and not has_off_hint:
+                return "engine_on"
+
+            if has_off_hint and not has_on_hint:
+                return "engine_off"
+
+        if self.LIGHT_KEYWORD_RE.search(normalized):
+            has_on_hint = bool(self.LIGHT_ON_HINT_RE.search(normalized))
+            has_off_hint = bool(self.LIGHT_OFF_HINT_RE.search(normalized))
+
+            if has_on_hint and not has_off_hint:
+                return "led_on"
+
+            if has_off_hint and not has_on_hint:
+                return "led_off"
+
         return None
 
     def _canonicalize_command_text(self, text: str) -> str:
@@ -457,6 +502,15 @@ class AutomationEngine:
 
         for source, target in ordered_replacements:
             normalized = normalized.replace(source, target)
+
+        # Handle common ASR misspellings like "turn on injin" -> "turn on engine".
+        normalized = self.ENGINE_SPLIT_ALIAS_RE.sub("engine", normalized)
+        normalized = self.ENGINE_ALIAS_RE.sub("engine", normalized)
+
+        # Handle common ASR token mistakes around "off".
+        normalized = self.TURN_OR_SWITCH_OF_RE.sub(r"\1 off", normalized)
+        normalized = self.COMPACT_TURNOFF_RE.sub(r"\1 off", normalized)
+        normalized = self.ENGINE_OF_RE.sub("engine off", normalized)
 
         return normalized
 
