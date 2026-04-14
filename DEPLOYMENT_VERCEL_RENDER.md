@@ -73,6 +73,8 @@ Then redeploy frontend.
 
 1. Backend Python version pinned to 3.11 on Render:
    - `backend/runtime.txt` exists with `python-3.11.11`.
+   - `backend/.python-version` exists with `3.11.11`.
+   - In Render dashboard, set Python version to `3.11.11` (do not keep default 3.14+).
 2. Render blueprint exists and points to backend root:
    - `render.yaml`.
 3. Vercel SPA routing config exists:
