@@ -151,3 +151,71 @@ Render Backend
 4. ESP32: TLS-enabled MQTT client with broker CA
 
 This is the clean and scalable architecture for online Flight Mode control.
+
+## HiveMQ Cloud Complete Setup (Your Live URLs)
+
+Use this section with your current deployment:
+
+- Frontend: `https://zara-aura.vercel.app`
+- Backend: `https://zara-the-ai-backend2.onrender.com`
+
+### 1) Create HiveMQ Cloud Credentials
+
+1. Create a HiveMQ Cloud cluster.
+2. Copy hostname from Client Connection Details (for example `xxxxxx.s1.eu.hivemq.cloud`).
+3. Create username and password.
+4. Use MQTT TLS port `8883`.
+
+### 2) Set Render Environment Variables
+
+Set these in Render Dashboard (Service -> Environment):
+
+- `DEFAULT_MODE=online`
+- `CORS_ORIGINS=https://zara-aura.vercel.app`
+- `FLIGHT_MQTT_ENABLED=true`
+- `FLIGHT_MQTT_HOST=<your-hivemq-host>`
+- `FLIGHT_MQTT_PORT=8883`
+- `FLIGHT_MQTT_CLIENT_ID=zara-backend`
+- `FLIGHT_MQTT_USERNAME=<your-hivemq-username>`
+- `FLIGHT_MQTT_PASSWORD=<your-hivemq-password>`
+- `FLIGHT_MQTT_TLS_ENABLED=true`
+- `FLIGHT_MQTT_TLS_INSECURE=false`
+- `FLIGHT_MQTT_CONTROL_TOPIC=zara/flight/control`
+- `FLIGHT_MQTT_STATUS_TOPIC=zara/flight/status`
+
+Keep build/start commands:
+
+- Build: `pip install -r requirements-render.txt`
+- Start: `gunicorn -c gunicorn_conf.py app.main:app`
+
+### 3) Set Vercel Environment Variable
+
+- `VITE_BACKEND_URL=https://zara-the-ai-backend2.onrender.com`
+
+Redeploy frontend after setting env variable.
+
+### 4) Update ESP32 Firmware
+
+In `iot/esp32/zara_flight_controller.ino` set:
+
+- `MQTT_HOST=<your-hivemq-host>`
+- `MQTT_PORT=8883`
+- `MQTT_USER=<your-hivemq-username>`
+- `MQTT_PASSWORD=<your-hivemq-password>`
+- `MQTT_USE_TLS=true`
+
+If you have broker CA PEM, set `MQTT_ROOT_CA`; otherwise current code falls back to insecure TLS mode.
+
+### 5) Verify End-to-End
+
+1. Open frontend: `https://zara-aura.vercel.app`
+2. Enable Flight Mode in UI.
+3. Say or type: `turn on lights`.
+4. Check backend status endpoint:
+
+   - `GET https://zara-the-ai-backend2.onrender.com/flight/status`
+
+Expected:
+
+- `connected: true`
+- `last_status.status: led_on` after command

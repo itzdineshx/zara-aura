@@ -11,16 +11,16 @@
 const char* WIFI_SSID = "Zayma";
 const char* WIFI_PASSWORD = "reddragon";
 
-// MQTT broker (local Mosquitto)
-const char* MQTT_HOST = "10.67.9.51";
-const uint16_t MQTT_PORT = 1884;
-const char* MQTT_USER = "";
-const char* MQTT_PASSWORD = "";
+// MQTT broker (HiveMQ Cloud)
+const char* MQTT_HOST = "e5c35c674acb4ec6bdb8514fa465cfa6.s1.eu.hivemq.cloud";
+const uint16_t MQTT_PORT = 8883;
+const char* MQTT_USER = "Zayma";
+const char* MQTT_PASSWORD = "Reddragon123";
 const char* TOPIC_CONTROL = "zara/flight/control";
 const char* TOPIC_STATUS = "zara/flight/status";
 
 // Set true when using a cloud broker on TLS port (usually 8883).
-const bool MQTT_USE_TLS = false;
+const bool MQTT_USE_TLS = true;
 
 // Paste the broker root CA PEM when available. Leave empty to fallback to insecure TLS mode.
 const char* MQTT_ROOT_CA = "";
