@@ -52,6 +52,10 @@ All main AI responses follow:
 
    pip install -r backend/requirements.txt
 
+  Optional Coqui TTS (only on Python 3.9-3.11):
+
+  pip install -r backend/requirements-tts.txt
+
 3. Copy environment template:
 
    copy backend/.env.example backend/.env
@@ -64,6 +68,10 @@ All main AI responses follow:
 ## Production Run (Gunicorn + UvicornWorker)
 
 gunicorn -c backend/gunicorn_conf.py app.main:app --chdir backend
+
+Render build command recommendation:
+
+pip install -r backend/requirements-render.txt
 
 ## Docker
 
