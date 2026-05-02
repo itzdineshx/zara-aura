@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import Orb from "@/components/Orb";
-import MicButton from "@/components/MicButton";
+import ZaraCore from "@/components/ZaraCore";
+import VoiceController from "@/components/VoiceController";
+import ResponseDisplay from "@/components/ResponseDisplay";
+import ModeToggle from "@/components/ModeToggle";
+import DeviceControlPanel from "@/components/DeviceControlPanel";
 import SettingsPanel from "@/components/SettingsPanel";
 import TopBar from "@/components/TopBar";
 import { defaultSettings, orbPaletteHues, type VoicePersona, type ZaraSettings } from "@/lib/settings";
@@ -917,39 +920,29 @@ const Index = () => {
         animate={settingsOpen ? { opacity: 0.55, scale: 1.12, x: -30 } : { opacity: 1, scale: 1.24, x: 0 }}
         transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
       >
-        <Orb state={orbState} audioStream={audioStream} visuals={orbVisuals} />
+        <ZaraCore state={orbState} audioStream={audioStream} visuals={orbVisuals} title={assistantText} subtitle={runtimeHint || undefined} />
       </motion.div>
 
       {/* Text */}
-      <div className="absolute bottom-32 z-10 flex flex-col items-center gap-2 px-6 text-center">
-        <AnimatePresence mode="wait">
-          <motion.p
-            key={messages}
-            className="text-sm font-light text-foreground/90 tracking-wide"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.5, ease: "easeOut" }}
-          >
-            {messages}
-          </motion.p>
-        </AnimatePresence>
-        {subtext && (
-          <motion.p
-            className="text-xs font-thin text-muted-foreground/50"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3, duration: 0.5 }}
-          >
-            {subtext}
-          </motion.p>
-        )}
-      </div>
+      <ResponseDisplay text={messages} subtext={subtext} />
 
       {/* Mic */}
-      <div className="absolute bottom-12 z-10">
-        <MicButton isActive={orbState === "listening"} onToggle={handleMicToggle} accentHue={orbVisuals.hue} />
-      </div>
+      <VoiceController orbState={orbState} onToggle={handleMicToggle} accentHue={orbVisuals.hue} />
+
+      <ModeToggle
+        mode={settings.ai.responseMode}
+        continuousLoop={settings.ai.continuousLoop}
+        onSetMode={(m) => setSettings((prev) => ({ ...prev, ai: { ...prev.ai, responseMode: m } }))}
+        onToggleLoop={() => setSettings((prev) => ({ ...prev, ai: { ...prev.ai, continuousLoop: !prev.ai.continuousLoop } }))}
+      />
+
+      <DeviceControlPanel
+        devices={[
+          { id: "light-1", label: "Living Room Light", on: true },
+          { id: "fan-1", label: "Ceiling Fan", on: false },
+        ]}
+        onToggleDevice={(id) => setRuntimeHint(`Toggling ${id} (MQTT placeholder)`)}
+      />
 
       <SettingsPanel
         open={settingsOpen}
