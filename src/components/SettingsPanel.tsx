@@ -455,15 +455,15 @@ const SettingsPanel = ({ open, settings, onOpenChange, onSettingsChange }: Setti
                   options={presenceOptions}
                 />
               </SettingRow>
-              <SettingRow icon={Radar} label="Flight Mode" hint="Enable ESP32 hardware control over MQTT">
+              <SettingRow icon={Radar} label="Home Automation" hint="Enable MQTT control for smart devices">
                 <Switch
-                  checked={settings.mode.flightMode}
+                  checked={settings.mode.homeAutomation}
                   onCheckedChange={(checked) =>
                     update({
                       ...settings,
                       mode: {
                         ...settings.mode,
-                        flightMode: checked,
+                        homeAutomation: checked,
                       },
                     })
                   }

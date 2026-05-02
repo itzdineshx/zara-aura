@@ -86,8 +86,8 @@ export async function syncBackendMode(mode: ResponseMode): Promise<void> {
   });
 }
 
-export async function syncBackendFlightMode(enabled: boolean): Promise<void> {
-  await requestJson<{ enabled: boolean }>("/flight-mode", {
+export async function syncBackendHomeAutomation(enabled: boolean): Promise<void> {
+  await requestJson<{ enabled: boolean }>("/home-mode", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

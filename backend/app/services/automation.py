@@ -14,7 +14,7 @@ from app.config import Settings
 if TYPE_CHECKING:
     from app.services.mcp_service import MCPService
     from app.services.mode_state import ModeState
-    from app.services.mqtt_flight import MQTTFlightController
+    from app.services.mqtt_flight import MQTTHomeAutomationController
 
 
 logger = logging.getLogger(__name__)
@@ -262,33 +262,74 @@ class AutomationEngine:
     FLIGHT_EMERGENCY_STOP_RE = re.compile(r"\b(emergency\s+stop|abort|kill\s+switch)\b", re.IGNORECASE)
     YOUTUBE_VIDEO_ID_RE = re.compile(r'"videoId":"(?P<id>[A-Za-z0-9_-]{11})"')
 
+    HOME_LIGHT_ON_RE = re.compile(
+        r"\b(?:turn|switch|set|enable|start)\s+on\s+(?:the\s+|all\s+)?(?:light|lights|lamp|lamps|bulb|bulbs|led|leds)\b"
+        r"|\b(?:light|lights|lamp|lamps|bulb|bulbs|led|leds)\s+on\b",
+        re.IGNORECASE,
+    )
+    HOME_LIGHT_OFF_RE = re.compile(
+        r"\b(?:turn|switch|set|disable|stop)\s+(?:off|of)\s+(?:the\s+|all\s+)?(?:light|lights|lamp|lamps|bulb|bulbs|led|leds)\b"
+        r"|\b(?:light|lights|lamp|lamps|bulb|bulbs|led|leds)\s+(?:off|of)\b",
+        re.IGNORECASE,
+    )
+    HOME_FAN_ON_RE = re.compile(r"\b(?:turn|switch|set|enable|start)\s+on\s+(?:the\s+)?fan\b|\bfan\s+on\b", re.IGNORECASE)
+    HOME_FAN_OFF_RE = re.compile(r"\b(?:turn|switch|set|disable|stop)\s+(?:off|of)\s+(?:the\s+)?fan\b|\bfan\s+(?:off|of)\b", re.IGNORECASE)
+    HOME_AC_ON_RE = re.compile(
+        r"\b(?:turn|switch|set|enable|start)\s+on\s+(?:the\s+)?(?:ac|air\s+conditioner|air\s+conditioning|cooler)\b"
+        r"|\b(?:ac|air\s+conditioner|air\s+conditioning|cooler)\s+on\b",
+        re.IGNORECASE,
+    )
+    HOME_AC_OFF_RE = re.compile(
+        r"\b(?:turn|switch|set|disable|stop)\s+(?:off|of)\s+(?:the\s+)?(?:ac|air\s+conditioner|air\s+conditioning|cooler)\b"
+        r"|\b(?:ac|air\s+conditioner|air\s+conditioning|cooler)\s+(?:off|of)\b",
+        re.IGNORECASE,
+    )
+    HOME_TV_ON_RE = re.compile(r"\b(?:turn|switch|set|enable|start)\s+on\s+(?:the\s+)?tv\b|\btv\s+on\b|\btelevision\s+on\b", re.IGNORECASE)
+    HOME_TV_OFF_RE = re.compile(r"\b(?:turn|switch|set|disable|stop)\s+(?:off|of)\s+(?:the\s+)?tv\b|\btv\s+(?:off|of)\b|\btelevision\s+off\b", re.IGNORECASE)
+    HOME_CURTAIN_OPEN_RE = re.compile(
+        r"\b(?:open|draw|raise)\s+(?:the\s+)?(?:curtain|curtains|blind|blinds)\b|\b(?:curtain|curtains|blind|blinds)\s+open\b",
+        re.IGNORECASE,
+    )
+    HOME_CURTAIN_CLOSE_RE = re.compile(
+        r"\b(?:close|shut|lower)\s+(?:the\s+)?(?:curtain|curtains|blind|blinds)\b|\b(?:curtain|curtains|blind|blinds)\s+close\b",
+        re.IGNORECASE,
+    )
+    HOME_DOOR_LOCK_RE = re.compile(r"\b(?:lock|secure|lock\s+the)\s+(?:main\s+)?door\b|\bdoor\s+lock\b", re.IGNORECASE)
+    HOME_DOOR_UNLOCK_RE = re.compile(r"\b(?:unlock|open|unsecure)\s+(?:the\s+)?(?:main\s+)?door\b|\bdoor\s+unlock\b", re.IGNORECASE)
+    HOME_ALL_ON_RE = re.compile(r"\b(?:turn|switch|set|enable|start)\s+everything\s+on\b|\ball\s+on\b", re.IGNORECASE)
+    HOME_ALL_OFF_RE = re.compile(r"\b(?:turn|switch|set|disable|stop)\s+everything\s+off\b|\ball\s+off\b", re.IGNORECASE)
+    HOME_SCENE_GOOD_MORNING_RE = re.compile(r"\b(good\s+morning|morning\s+scene|wake\s+up\s+scene)\b", re.IGNORECASE)
+    HOME_SCENE_GOOD_NIGHT_RE = re.compile(r"\b(good\s+night|night\s+scene|sleep\s+scene)\b", re.IGNORECASE)
+    HOME_SCENE_AWAY_RE = re.compile(r"\b(away\s+mode|leave\s+home|exit\s+mode)\b", re.IGNORECASE)
+    HOME_SCENE_HOME_RE = re.compile(r"\b(home\s+mode|i'?m\s+home|welcome\s+home)\b", re.IGNORECASE)
+
     def __init__(
         self,
         settings: Settings,
         mcp_service: MCPService | None = None,
         mode_state: ModeState | None = None,
-        flight_controller: MQTTFlightController | None = None,
+        home_controller: MQTTHomeAutomationController | None = None,
     ) -> None:
         self.settings = settings
         self.mcp_service = mcp_service
         self.mode_state = mode_state
-        self.flight_controller = flight_controller
+        self.home_controller = home_controller
 
     async def detect_and_execute(self, text: str, language_code: str | None = None) -> dict[str, Any] | None:
         normalized = self._canonicalize_command_text(text)
         if not normalized:
             return None
 
-        flight_result = await self._detect_and_execute_flight_command(normalized)
-        if flight_result is not None:
-            return self._with_language(flight_result, language_code)
+        home_result = await self._detect_and_execute_home_command(normalized)
+        if home_result is not None:
+            return self._with_language(home_result, language_code)
 
-        if self.ENGINE_ON_RE.search(normalized):
-            result = await self._trigger_engine(turn_on=True)
+        if self.HOME_ALL_OFF_RE.search(normalized):
+            result = await self._trigger_home_command("all_off")
             return self._with_language(result, language_code)
 
-        if self.ENGINE_OFF_RE.search(normalized):
-            result = await self._trigger_engine(turn_on=False)
+        if self.HOME_ALL_ON_RE.search(normalized):
+            result = await self._trigger_home_command("all_on")
             return self._with_language(result, language_code)
 
         if self.SPOTIFY_MUSIC_RE.search(normalized):
@@ -421,8 +462,8 @@ class AutomationEngine:
 
         return None
 
-    async def _detect_and_execute_flight_command(self, normalized: str) -> dict[str, Any] | None:
-        action = self._match_flight_action(normalized)
+    async def _detect_and_execute_home_command(self, normalized: str) -> dict[str, Any] | None:
+        action = self._match_home_action(normalized)
         if not action:
             return None
 
@@ -430,104 +471,87 @@ class AutomationEngine:
             return {
                 "type": action,
                 "action": action,
-                "domain": "flight",
+                "domain": "home",
                 "status": "failed",
-                "error": "Flight mode state is unavailable",
+                "error": "Home automation state is unavailable",
             }
 
-        flight_mode_enabled = await self.mode_state.is_flight_mode_enabled()
-        if not flight_mode_enabled:
+        home_automation_enabled = await self.mode_state.is_home_automation_enabled()
+        if not home_automation_enabled:
             return {
                 "type": action,
                 "action": action,
-                "domain": "flight",
-                "status": "blocked_flight_mode",
-                "detail": "Flight Mode is OFF. Enable Flight Mode in settings to send hardware commands.",
+                "domain": "home",
+                "status": "blocked_home_mode",
+                "detail": "Home Automation is OFF. Enable it in settings to send device commands.",
             }
 
-        if not self.flight_controller:
+        if not self.home_controller:
             return {
                 "type": action,
                 "action": action,
-                "domain": "flight",
+                "domain": "home",
                 "status": "failed",
-                "error": "MQTT flight controller is unavailable",
+                "error": "MQTT home controller is unavailable",
             }
 
-        result = await self.flight_controller.publish_action(action)
-        result.setdefault("domain", "flight")
+        result = await self.home_controller.publish_action(action)
+        result.setdefault("domain", "home")
         result.setdefault("action", action)
         return result
 
-    def _match_flight_action(self, normalized: str) -> str | None:
-        if self.FLIGHT_EMERGENCY_STOP_RE.search(normalized):
-            return "emergency_stop"
+    def _match_home_action(self, normalized: str) -> str | None:
+        if self.HOME_LIGHT_ON_RE.search(normalized):
+            return "light_on"
+        if self.HOME_LIGHT_OFF_RE.search(normalized):
+            return "light_off"
+        if self.HOME_FAN_ON_RE.search(normalized):
+            return "fan_on"
+        if self.HOME_FAN_OFF_RE.search(normalized):
+            return "fan_off"
+        if self.HOME_AC_ON_RE.search(normalized):
+            return "ac_on"
+        if self.HOME_AC_OFF_RE.search(normalized):
+            return "ac_off"
+        if self.HOME_TV_ON_RE.search(normalized):
+            return "tv_on"
+        if self.HOME_TV_OFF_RE.search(normalized):
+            return "tv_off"
+        if self.HOME_CURTAIN_OPEN_RE.search(normalized):
+            return "curtain_open"
+        if self.HOME_CURTAIN_CLOSE_RE.search(normalized):
+            return "curtain_close"
+        if self.HOME_DOOR_LOCK_RE.search(normalized):
+            return "door_lock"
+        if self.HOME_DOOR_UNLOCK_RE.search(normalized):
+            return "door_unlock"
+        if self.HOME_SCENE_GOOD_MORNING_RE.search(normalized):
+            return "scene_good_morning"
+        if self.HOME_SCENE_GOOD_NIGHT_RE.search(normalized):
+            return "scene_good_night"
+        if self.HOME_SCENE_AWAY_RE.search(normalized):
+            return "scene_away"
+        if self.HOME_SCENE_HOME_RE.search(normalized):
+            return "scene_home"
 
-        if self.FLIGHT_LED_ON_RE.search(normalized):
-            return "led_on"
-
-        if self.FLIGHT_LED_OFF_RE.search(normalized):
-            return "led_off"
-
-        if self.FLIGHT_SERVO_RIGHT_RE.search(normalized):
-            return "servo_right"
-
-        if self.FLIGHT_SERVO_LEFT_RE.search(normalized):
-            return "servo_left"
-
-        if self.FLIGHT_ELEVATOR_UP_RE.search(normalized):
-            return "elevator_up"
-
-        if self.FLIGHT_ELEVATOR_DOWN_RE.search(normalized):
-            return "elevator_down"
-
-        if self.FLIGHT_ROLL_RIGHT_RE.search(normalized):
-            return "roll_right"
-
-        if self.FLIGHT_ROLL_LEFT_RE.search(normalized):
-            return "roll_left"
-
-        if self.FLIGHT_CONTROL_CHECK_RE.search(normalized):
-            return "control_check"
-
-        if self.ENGINE_ON_RE.search(normalized):
-            return "engine_on"
-
-        if self.ENGINE_OFF_RE.search(normalized):
-            return "engine_off"
-
-        if self.FLIGHT_THROTTLE_UP_RE.search(normalized):
-            return "throttle_up"
-
-        if self.FLIGHT_THROTTLE_DOWN_RE.search(normalized):
-            return "throttle_down"
-
-        fuzzy_action = self._match_flight_action_fuzzy(normalized)
+        fuzzy_action = self._match_home_action_fuzzy(normalized)
         if fuzzy_action:
             return fuzzy_action
 
         return None
 
-    def _match_flight_action_fuzzy(self, normalized: str) -> str | None:
-        if self.ENGINE_KEYWORD_RE.search(normalized):
-            has_on_hint = bool(self.ENGINE_ON_HINT_RE.search(normalized))
-            has_off_hint = bool(self.ENGINE_OFF_HINT_RE.search(normalized))
+    def _match_home_action_fuzzy(self, normalized: str) -> str | None:
+        if re.search(r"\b(?:lights?|lamps?|bulbs?|leds?)\b", normalized, re.IGNORECASE):
+            if re.search(r"\b(?:on|start|enable|open)\b", normalized, re.IGNORECASE):
+                return "light_on"
+            if re.search(r"\b(?:off|stop|disable|close)\b", normalized, re.IGNORECASE):
+                return "light_off"
 
-            if has_on_hint and not has_off_hint:
-                return "engine_on"
-
-            if has_off_hint and not has_on_hint:
-                return "engine_off"
-
-        if self.LIGHT_KEYWORD_RE.search(normalized):
-            has_on_hint = bool(self.LIGHT_ON_HINT_RE.search(normalized))
-            has_off_hint = bool(self.LIGHT_OFF_HINT_RE.search(normalized))
-
-            if has_on_hint and not has_off_hint:
-                return "led_on"
-
-            if has_off_hint and not has_on_hint:
-                return "led_off"
+        if re.search(r"\bfan\b", normalized, re.IGNORECASE):
+            if re.search(r"\b(?:on|start|enable)\b", normalized, re.IGNORECASE):
+                return "fan_on"
+            if re.search(r"\b(?:off|stop|disable)\b", normalized, re.IGNORECASE):
+                return "fan_off"
 
         return None
 
@@ -538,39 +562,28 @@ class AutomationEngine:
         for source, target in ordered_replacements:
             normalized = normalized.replace(source, target)
 
-        # Handle common ASR misspellings like "turn on injin" -> "turn on engine".
-        normalized = self.ENGINE_SPLIT_ALIAS_RE.sub("engine", normalized)
-        normalized = self.ENGINE_ALIAS_RE.sub("engine", normalized)
-
         # Handle common ASR token mistakes around "off".
         normalized = self.TURN_OR_SWITCH_OF_RE.sub(r"\1 off", normalized)
         normalized = self.COMPACT_TURNOFF_RE.sub(r"\1 off", normalized)
-        normalized = self.ENGINE_OF_RE.sub("engine off", normalized)
 
         return normalized
 
-    async def _trigger_engine(self, turn_on: bool) -> dict[str, Any]:
-        suffix = "on" if turn_on else "off"
-        url = f"http://10.133.52.233/{suffix}"
+    async def _trigger_home_command(self, action: str) -> dict[str, Any]:
         payload: dict[str, Any] = {
-            "type": "engine_on" if turn_on else "engine_off",
+            "type": action,
             "status": "planned",
-            "target": url,
-            "intent": "Turn on engine" if turn_on else "Turn off engine",
+            "intent": "Execute home automation command",
         }
 
         if not self.settings.automation_execute:
             return payload
 
-        def _send_request() -> None:
-            with urllib.request.urlopen(url, timeout=5) as response:
-                if response.status >= 400:
-                    raise RuntimeError(f"HTTP {response.status}")
-
         try:
-            await asyncio.to_thread(_send_request)
-            payload["status"] = "executed"
-            payload["executor"] = "http_request"
+            if not self.home_controller:
+                raise RuntimeError("MQTT home controller is unavailable")
+            result = await self.home_controller.publish_action(action)
+            payload.update(result)
+            payload["status"] = result.get("status", "executed")
         except Exception as exc:
             payload["status"] = "failed"
             payload["error"] = str(exc)

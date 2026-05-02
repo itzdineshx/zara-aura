@@ -5,7 +5,7 @@ import MicButton from "@/components/MicButton";
 import SettingsPanel from "@/components/SettingsPanel";
 import TopBar from "@/components/TopBar";
 import { defaultSettings, orbPaletteHues, type VoicePersona, type ZaraSettings } from "@/lib/settings";
-import { fetchTtsAudio, sendVoiceChunk, syncBackendFlightMode, syncBackendMode, type BackendAction, type BackendEmotion } from "@/lib/backend";
+import { fetchTtsAudio, sendVoiceChunk, syncBackendHomeAutomation, syncBackendMode, type BackendAction, type BackendEmotion } from "@/lib/backend";
 
 type OrbState = "idle" | "listening" | "thinking" | "speaking";
 
@@ -791,16 +791,16 @@ const Index = () => {
 
   useEffect(() => {
     let active = true;
-    syncBackendFlightMode(settings.mode.flightMode).catch((error) => {
+    syncBackendHomeAutomation(settings.mode.homeAutomation).catch((error) => {
       if (!active) return;
-      const message = error instanceof Error ? error.message : "Unable to sync Flight Mode";
+      const message = error instanceof Error ? error.message : "Unable to sync Home Automation mode";
       setRuntimeHint(message);
     });
 
     return () => {
       active = false;
     };
-  }, [settings.mode.flightMode]);
+  }, [settings.mode.homeAutomation]);
 
   const messages = useMemo(() => {
     if (orbState === "listening") {
@@ -906,7 +906,7 @@ const Index = () => {
       <TopBar
         mode={settings.ai.responseMode}
         presence={settings.mode.presence}
-        flightMode={settings.mode.flightMode}
+        homeAutomation={settings.mode.homeAutomation}
         continuousLoop={settings.ai.continuousLoop}
         onOpenSettings={() => setSettingsOpen(true)}
       />

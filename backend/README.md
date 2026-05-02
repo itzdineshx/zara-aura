@@ -25,9 +25,9 @@ FastAPI backend optimized for low-resource servers (2-4 GB RAM) with async routi
 - POST /chat
 - POST /voice
 - POST /mode
-- POST /flight-mode
-- GET /flight-mode
-- GET /flight/status
+- POST /home-mode
+- GET /home-mode
+- GET /home/status
 - WebSocket /ws/orb
 - GET /health
 
@@ -107,17 +107,17 @@ Supported actions:
 - open youtube
 - search queries
 - get current time/date
-- flight controller commands over MQTT (when Flight Mode is enabled)
+- home automation commands over MQTT (when Home Automation is enabled)
 
 Dangerous OS command execution is intentionally not implemented.
 
-## Flight Mode (ESP32 + MQTT)
+## Home Automation (ESP32 + MQTT)
 
-The backend now supports hardware control via MQTT using a dedicated Flight Mode gate.
+The backend now supports smart-device control via MQTT using a dedicated Home Automation gate.
 
-- Commands are only published when Flight Mode is ON.
-- Control topic: `zara/flight/control`
-- Status topic: `zara/flight/status`
+- Commands are only published when Home Automation is ON.
+- Control topic: `zara/home/control`
+- Status topic: `zara/home/status`
 
 Full setup guide and payload details:
 
