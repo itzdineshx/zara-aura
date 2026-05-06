@@ -14,7 +14,7 @@ from app.config import Settings
 if TYPE_CHECKING:
     from app.services.mcp_service import MCPService
     from app.services.mode_state import ModeState
-    from app.services.mqtt_flight import MQTTHomeAutomationController
+    from app.services.mqtt_home import MQTTHomeAutomationController
 
 
 logger = logging.getLogger(__name__)
@@ -216,50 +216,19 @@ class AutomationEngine:
         r"\b(turn|switch|set|disable)\s+off\s+(the\s+)?engine\b|\bstop\s+(the\s+)?engine\b|\bengine\s+off\b",
         re.IGNORECASE,
     )
-    FLIGHT_LED_ON_RE = re.compile(
+    HOME_LED_ON_RE = re.compile(
         r"\b(?:turn|switch)\s+on\s+(?:the\s+|all\s+)?(?:light|lights|led|leds)\b"
         r"|\bstart\s+(?:the\s+|all\s+)?(?:light|lights|led|leds)\b"
         r"|\b(?:light|lights|led|leds)\s+on\b",
         re.IGNORECASE,
     )
-    FLIGHT_LED_OFF_RE = re.compile(
+    HOME_LED_OFF_RE = re.compile(
         r"\b(?:turn|switch)\s+(?:off|of)\s+(?:the\s+|all\s+)?(?:light|lights|led|leds)\b"
         r"|\bstop\s+(?:the\s+|all\s+)?(?:light|lights|led|leds)\b"
         r"|\b(?:turn|switch|stop)\s+(?:the\s+|all\s+)?(?:light|lights|led|leds)\s+(?:off|of)\b"
         r"|\b(?:light|lights|led|leds)\s+(?:off|of)\b",
         re.IGNORECASE,
     )
-    FLIGHT_SERVO_RIGHT_RE = re.compile(r"\b(turn|move)\s+right\b|\bservo\s+right\b", re.IGNORECASE)
-    FLIGHT_SERVO_LEFT_RE = re.compile(r"\b(turn|move)\s+left\b|\bservo\s+left\b", re.IGNORECASE)
-    FLIGHT_ELEVATOR_UP_RE = re.compile(
-        r"\b(upward|elevator\s+up|move\s+up|pitch\s+up|nose\s+up)\b",
-        re.IGNORECASE,
-    )
-    FLIGHT_ELEVATOR_DOWN_RE = re.compile(
-        r"\b(downward|elevator\s+down|move\s+down|pitch\s+down|nose\s+down)\b",
-        re.IGNORECASE,
-    )
-    FLIGHT_ROLL_RIGHT_RE = re.compile(
-        r"\b(right\s+roll|roll\s+right|bank\s+right|aileron\s+right)\b",
-        re.IGNORECASE,
-    )
-    FLIGHT_ROLL_LEFT_RE = re.compile(
-        r"\b(left\s+roll|roll\s+left|bank\s+left|aileron\s+left)\b",
-        re.IGNORECASE,
-    )
-    FLIGHT_CONTROL_CHECK_RE = re.compile(
-        r"\b(control\s+check|flight\s+check|preflight\s+check|system\s+check)\b",
-        re.IGNORECASE,
-    )
-    FLIGHT_THROTTLE_UP_RE = re.compile(
-        r"\b(increase|raise|boost)\s+(the\s+)?(speed|throttle)\b|\b(throttle|speed)\s+up\b",
-        re.IGNORECASE,
-    )
-    FLIGHT_THROTTLE_DOWN_RE = re.compile(
-        r"\b(decrease|reduce|lower)\s+(the\s+)?(speed|throttle)\b|\b(throttle|speed)\s+down\b",
-        re.IGNORECASE,
-    )
-    FLIGHT_EMERGENCY_STOP_RE = re.compile(r"\b(emergency\s+stop|abort|kill\s+switch)\b", re.IGNORECASE)
     YOUTUBE_VIDEO_ID_RE = re.compile(r'"videoId":"(?P<id>[A-Za-z0-9_-]{11})"')
 
     HOME_LIGHT_ON_RE = re.compile(

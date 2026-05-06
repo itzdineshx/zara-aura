@@ -76,35 +76,26 @@ class Settings:
     memory_limit: int = _env_int("MEMORY_LIMIT", 12)
 
     automation_execute: bool = _env_bool("AUTOMATION_EXECUTE", False)
-    home_automation_default: bool = _env_bool("HOME_AUTOMATION_DEFAULT", _env_bool("FLIGHT_MODE_DEFAULT", False))
+    home_automation_default: bool = _env_bool("HOME_AUTOMATION_DEFAULT", False)
 
-    home_mqtt_enabled: bool = _env_bool("HOME_MQTT_ENABLED", _env_bool("FLIGHT_MQTT_ENABLED", True))
-    home_mqtt_host: str = os.getenv("HOME_MQTT_HOST", os.getenv("FLIGHT_MQTT_HOST", "127.0.0.1"))
-    home_mqtt_port: int = _env_int("HOME_MQTT_PORT", _env_int("FLIGHT_MQTT_PORT", 1883))
-    home_mqtt_keepalive_s: int = _env_int("HOME_MQTT_KEEPALIVE_S", _env_int("FLIGHT_MQTT_KEEPALIVE_S", 30))
-    home_mqtt_client_id: str = os.getenv("HOME_MQTT_CLIENT_ID", os.getenv("FLIGHT_MQTT_CLIENT_ID", "zara-backend"))
-    home_mqtt_username: str = os.getenv("HOME_MQTT_USERNAME", os.getenv("FLIGHT_MQTT_USERNAME", ""))
-    home_mqtt_password: str = os.getenv("HOME_MQTT_PASSWORD", os.getenv("FLIGHT_MQTT_PASSWORD", ""))
-    home_mqtt_tls_enabled: bool = _env_bool("HOME_MQTT_TLS_ENABLED", _env_bool("FLIGHT_MQTT_TLS_ENABLED", False))
-    home_mqtt_tls_insecure: bool = _env_bool("HOME_MQTT_TLS_INSECURE", _env_bool("FLIGHT_MQTT_TLS_INSECURE", False))
-    home_mqtt_tls_ca_cert: str = os.getenv("HOME_MQTT_TLS_CA_CERT", os.getenv("FLIGHT_MQTT_TLS_CA_CERT", ""))
-    home_mqtt_tls_certfile: str = os.getenv("HOME_MQTT_TLS_CERTFILE", os.getenv("FLIGHT_MQTT_TLS_CERTFILE", ""))
-    home_mqtt_tls_keyfile: str = os.getenv("HOME_MQTT_TLS_KEYFILE", os.getenv("FLIGHT_MQTT_TLS_KEYFILE", ""))
-    home_mqtt_control_topic: str = os.getenv(
-        "HOME_MQTT_CONTROL_TOPIC",
-        os.getenv("FLIGHT_MQTT_CONTROL_TOPIC", "zara/home/control"),
-    )
-    home_mqtt_status_topic: str = os.getenv(
-        "HOME_MQTT_STATUS_TOPIC",
-        os.getenv("FLIGHT_MQTT_STATUS_TOPIC", "zara/home/status"),
-    )
-    home_mqtt_qos: int = _env_int("HOME_MQTT_QOS", _env_int("FLIGHT_MQTT_QOS", 1))
-    home_mqtt_retry_attempts: int = _env_int("HOME_MQTT_RETRY_ATTEMPTS", _env_int("FLIGHT_MQTT_RETRY_ATTEMPTS", 3))
-    home_mqtt_retry_delay_ms: int = _env_int("HOME_MQTT_RETRY_DELAY_MS", _env_int("FLIGHT_MQTT_RETRY_DELAY_MS", 250))
-    home_mqtt_publish_timeout_s: float = _env_float(
-        "HOME_MQTT_PUBLISH_TIMEOUT_S",
-        _env_float("FLIGHT_MQTT_PUBLISH_TIMEOUT_S", 1.5),
-    )
+    home_mqtt_enabled: bool = _env_bool("HOME_MQTT_ENABLED", True)
+    home_mqtt_host: str = os.getenv("HOME_MQTT_HOST", "127.0.0.1")
+    home_mqtt_port: int = _env_int("HOME_MQTT_PORT", 1883)
+    home_mqtt_keepalive_s: int = _env_int("HOME_MQTT_KEEPALIVE_S", 30)
+    home_mqtt_client_id: str = os.getenv("HOME_MQTT_CLIENT_ID", "zara-backend")
+    home_mqtt_username: str = os.getenv("HOME_MQTT_USERNAME", "")
+    home_mqtt_password: str = os.getenv("HOME_MQTT_PASSWORD", "")
+    home_mqtt_tls_enabled: bool = _env_bool("HOME_MQTT_TLS_ENABLED", False)
+    home_mqtt_tls_insecure: bool = _env_bool("HOME_MQTT_TLS_INSECURE", False)
+    home_mqtt_tls_ca_cert: str = os.getenv("HOME_MQTT_TLS_CA_CERT", "")
+    home_mqtt_tls_certfile: str = os.getenv("HOME_MQTT_TLS_CERTFILE", "")
+    home_mqtt_tls_keyfile: str = os.getenv("HOME_MQTT_TLS_KEYFILE", "")
+    home_mqtt_control_topic: str = os.getenv("HOME_MQTT_CONTROL_TOPIC", "zara/home/control")
+    home_mqtt_status_topic: str = os.getenv("HOME_MQTT_STATUS_TOPIC", "zara/home/status")
+    home_mqtt_qos: int = _env_int("HOME_MQTT_QOS", 1)
+    home_mqtt_retry_attempts: int = _env_int("HOME_MQTT_RETRY_ATTEMPTS", 3)
+    home_mqtt_retry_delay_ms: int = _env_int("HOME_MQTT_RETRY_DELAY_MS", 250)
+    home_mqtt_publish_timeout_s: float = _env_float("HOME_MQTT_PUBLISH_TIMEOUT_S", 1.5)
 
     home_temperature_default: int = _env_int("HOME_TEMPERATURE_DEFAULT", 24)
     home_fan_speed_step: int = _env_int("HOME_FAN_SPEED_STEP", 10)

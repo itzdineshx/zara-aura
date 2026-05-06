@@ -8,7 +8,18 @@ import DeviceControlPanel from "@/components/DeviceControlPanel";
 import SettingsPanel from "@/components/SettingsPanel";
 import TopBar from "@/components/TopBar";
 import { defaultSettings, orbPaletteHues, type VoicePersona, type ZaraSettings } from "@/lib/settings";
-import { fetchTtsAudio, sendVoiceChunk, syncBackendHomeAutomation, syncBackendMode, type BackendAction, type BackendEmotion } from "@/lib/backend";
+import {
+  checkHealth,
+  processVoice,
+  setMode,
+  setHomeAutomationEnabled,
+  generateSpeech,
+  sendChat,
+  executeHomeAction,
+  type BackendAction,
+  type BackendEmotion,
+  type HomeStatusResponse,
+} from "@/lib/zara-api";
 
 type OrbState = "idle" | "listening" | "thinking" | "speaking";
 
@@ -548,7 +559,7 @@ const Index = () => {
 
   const playBackendTts = useCallback(async (text: string, languageCode: SupportedLanguageCode): Promise<boolean> => {
     try {
-      const audioBlob = await fetchTtsAudio(text, languageCode);
+      const audioBlob = await generateSpeech(text, languageCode);
       if (!audioBlob.size) {
         return false;
       }
@@ -646,6 +657,7 @@ const Index = () => {
 
       try {
         const response = await sendVoiceChunk(audioChunk, settings.ai.responseMode, settings.voice.language);
+          const response = await processVoice(audioChunk, settings.ai.responseMode, settings.voice.language);
         if (!mountedRef.current) return;
 
         setAssistantText(response.text);
@@ -781,7 +793,7 @@ const Index = () => {
 
   useEffect(() => {
     let active = true;
-    syncBackendMode(settings.ai.responseMode).catch((error) => {
+    setMode(settings.ai.responseMode).catch((error) => {
       if (!active) return;
       const message = error instanceof Error ? error.message : "Unable to sync AI mode";
       setRuntimeHint(message);
@@ -794,7 +806,7 @@ const Index = () => {
 
   useEffect(() => {
     let active = true;
-    syncBackendHomeAutomation(settings.mode.homeAutomation).catch((error) => {
+    setHomeAutomationEnabled(settings.mode.homeAutomation).catch((error) => {
       if (!active) return;
       const message = error instanceof Error ? error.message : "Unable to sync Home Automation mode";
       setRuntimeHint(message);
@@ -804,6 +816,26 @@ const Index = () => {
       active = false;
     };
   }, [settings.mode.homeAutomation]);
+
+  // Check backend health on mount
+  useEffect(() => {
+    let active = true;
+    checkHealth()
+      .then(() => {
+        if (active && mountedRef.current) {
+          console.log("Backend health check passed");
+        }
+      })
+      .catch((error) => {
+        if (!active) return;
+        const message = error instanceof Error ? error.message : "Backend health check failed";
+        console.warn("Backend health check:", message);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const messages = useMemo(() => {
     if (orbState === "listening") {
@@ -937,11 +969,7 @@ const Index = () => {
       />
 
       <DeviceControlPanel
-        devices={[
-          { id: "light-1", label: "Living Room Light", on: true },
-          { id: "fan-1", label: "Ceiling Fan", on: false },
-        ]}
-        onToggleDevice={(id) => setRuntimeHint(`Toggling ${id} (MQTT placeholder)`)}
+        onStatusChange={(message) => setRuntimeHint(message)}
       />
 
       <SettingsPanel

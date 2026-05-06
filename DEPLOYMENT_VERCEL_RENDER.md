@@ -19,11 +19,11 @@ Frontend only talks to backend APIs.
 
 1. User speaks in frontend (Vercel).
 2. Frontend calls backend API (Render) at `/voice` or `/chat`.
-3. Backend detects a Flight Mode action such as `engine_on`.
-4. Backend publishes that action to MQTT topic `zara/flight/control`.
-5. ESP32 is subscribed to `zara/flight/control`, receives command, executes hardware action.
-6. ESP32 publishes status to `zara/flight/status`.
-7. Backend reads status topic and exposes it via `GET /flight/status`.
+3. Backend detects a Home Automation action such as `light_on`.
+4. Backend publishes that action to MQTT topic `zara/home/control`.
+5. ESP32 is subscribed to `zara/home/control`, receives command, executes hardware action.
+6. ESP32 publishes status to `zara/home/status`.
+7. Backend reads status topic and exposes it via `GET /home/status`.
 
 ## Required Components for Internet Use
 
@@ -43,17 +43,17 @@ Set these Render environment variables:
 
 - `OPENROUTER_API_KEY=<your key>`
 - `CORS_ORIGINS=https://<your-vercel-domain>`
-- `FLIGHT_MQTT_ENABLED=true`
-- `FLIGHT_MQTT_HOST=<broker host>`
-- `FLIGHT_MQTT_PORT=8883`
-- `FLIGHT_MQTT_USERNAME=<broker username>`
-- `FLIGHT_MQTT_PASSWORD=<broker password>`
-- `FLIGHT_MQTT_TLS_ENABLED=true`
-- `FLIGHT_MQTT_TLS_INSECURE=false`
+- `HOME_MQTT_ENABLED=true`
+- `HOME_MQTT_HOST=<broker host>`
+- `HOME_MQTT_PORT=8883`
+- `HOME_MQTT_USERNAME=<broker username>`
+- `HOME_MQTT_PASSWORD=<broker password>`
+- `HOME_MQTT_TLS_ENABLED=true`
+- `HOME_MQTT_TLS_INSECURE=false`
 
 Optional if your broker requires a custom CA path:
 
-- `FLIGHT_MQTT_TLS_CA_CERT=<path inside container>`
+- `HOME_MQTT_TLS_CA_CERT=<path inside container>`
 
 Backend code already supports these TLS settings.
 
@@ -69,7 +69,7 @@ Set this Vercel env variable:
 
 Then redeploy frontend.
 
-## No-Error Preflight (Run Before Go-Live)
+## Pre-Deployment Validation (Run Before Go-Live)
 
 1. Backend Python version pinned to 3.11 on Render:
    - `backend/runtime.txt` exists with `python-3.11.11`.
@@ -101,8 +101,8 @@ In your sketch, update:
 - `MQTT_USE_TLS=true`
 - `MQTT_ROOT_CA` with your broker CA PEM (recommended)
 - Topics must stay:
-  - `zara/flight/control`
-  - `zara/flight/status`
+  - `zara/home/control`
+  - `zara/home/status`
 
 Important:
 
@@ -127,12 +127,12 @@ Render Backend
 
 1. Backend health works:
    - `GET https://<render-backend>/health`
-2. Flight mode ON:
-   - `POST https://<render-backend>/flight-mode` with `{ "enabled": true }`
+2. Home automation ON:
+   - `POST https://<render-backend>/home-mode` with `{ "enabled": true }`
 3. Broker connection visible:
-   - `GET https://<render-backend>/flight/status` should show `connected: true`
+   - `GET https://<render-backend>/home/status` should show `connected: true`
 4. Send command:
-   - `POST /chat` with text `turn on engine`
+   - `POST /chat` with text `turn on light`
 5. ESP32 serial shows command received and status publish.
 
 ## Common Failure Causes
@@ -141,7 +141,7 @@ Render Backend
 2. Render backend not connected to MQTT broker (bad host, port, username, password, TLS mismatch).
 3. ESP32 still pointing to old local IP broker.
 4. Topic mismatch between backend and firmware.
-5. Flight Mode left OFF (`/flight-mode` must be enabled).
+5. Home automation left OFF (`/home-mode` must be enabled).
 
 ## Recommended Production Pattern
 

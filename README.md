@@ -3,7 +3,7 @@
 ZARA is a multi-mode voice-first AI platform built to evolve from a conversational assistant into a domain automation core. Right now the project focuses on two modes:
 
 - Default mode: normal conversational AI with voice input, multilingual replies, memory, and safe browser/system actions.
-- Flight Mode: drone automation control over MQTT for ESP32-based hardware.
+- Home Automation: smart device control over MQTT for ESP32-based hardware.
 
 The long-term architecture is intentionally reusable. Farm, home, and device automations are planned to follow the same Zara core with new domain-specific intent handlers and execution adapters.
 
@@ -12,7 +12,7 @@ The long-term architecture is intentionally reusable. Farm, home, and device aut
 - Captures voice or text from the frontend.
 - Detects language and user intent.
 - Routes normal conversation through online, smart, or offline AI models.
-- Executes safe automation such as browser actions, current time/date, and Flight Mode hardware commands.
+- Executes safe automation such as browser actions, current time/date, and home automation hardware commands.
 - Returns text, emotion, audio features, and action metadata to the UI.
 
 ## Mode Model
@@ -22,7 +22,7 @@ There are two different mode layers in the codebase:
 | Layer | Options | Purpose |
 | --- | --- | --- |
 | AI response mode | `online`, `smart`, `offline` | Chooses the language-model routing strategy for normal conversation. |
-| Product mode | Default conversational mode, Flight Mode, future domain modes | Chooses which domain ZARA should operate in. |
+| Product mode | Default conversational mode, Home Automation, future domain modes | Chooses which domain ZARA should operate in. |
 
 Default conversational mode uses the AI response router. Flight Mode is a separate hardware gate that allows voice commands to be published to the flight controller only when it is enabled.
 

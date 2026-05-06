@@ -34,7 +34,7 @@ from app.services.language_service import LanguageDetectionResult, LanguageServi
 from app.services.memory import MemoryStore
 from app.services.mcp_service import MCPService
 from app.services.mode_state import ModeState
-from app.services.mqtt_flight import MQTTHomeAutomationController
+from app.services.mqtt_home import MQTTHomeAutomationController
 from app.services.ollama_client import OllamaClient
 from app.services.openrouter_client import OpenRouterClient
 from app.services.tts_service import TTSService
