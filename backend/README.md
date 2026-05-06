@@ -121,4 +121,4 @@ The backend now supports smart-device control via MQTT using a dedicated Home Au
 
 Full setup guide and payload details:
 
-- See `backend/FLIGHT_MODE_MQTT.md`
+- See `backend/HOME_AUTOMATION_MQTT.md`

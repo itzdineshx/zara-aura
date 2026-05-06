@@ -150,7 +150,7 @@ Render Backend
 3. MQTT: Managed broker (TLS)
 4. ESP32: TLS-enabled MQTT client with broker CA
 
-This is the clean and scalable architecture for online Flight Mode control.
+This is the clean and scalable architecture for online Home Automation control.
 
 ## HiveMQ Cloud Complete Setup (Your Live URLs)
 
@@ -172,16 +172,16 @@ Set these in Render Dashboard (Service -> Environment):
 
 - `DEFAULT_MODE=online`
 - `CORS_ORIGINS=https://zara-aura.vercel.app`
-- `FLIGHT_MQTT_ENABLED=true`
-- `FLIGHT_MQTT_HOST=<your-hivemq-host>`
-- `FLIGHT_MQTT_PORT=8883`
-- `FLIGHT_MQTT_CLIENT_ID=zara-backend`
-- `FLIGHT_MQTT_USERNAME=<your-hivemq-username>`
-- `FLIGHT_MQTT_PASSWORD=<your-hivemq-password>`
-- `FLIGHT_MQTT_TLS_ENABLED=true`
-- `FLIGHT_MQTT_TLS_INSECURE=false`
-- `FLIGHT_MQTT_CONTROL_TOPIC=zara/flight/control`
-- `FLIGHT_MQTT_STATUS_TOPIC=zara/flight/status`
+- `HOME_MQTT_ENABLED=true`
+- `HOME_MQTT_HOST=<your-hivemq-host>`
+- `HOME_MQTT_PORT=8883`
+- `HOME_MQTT_CLIENT_ID=zara-backend`
+- `HOME_MQTT_USERNAME=<your-hivemq-username>`
+- `HOME_MQTT_PASSWORD=<your-hivemq-password>`
+- `HOME_MQTT_TLS_ENABLED=true`
+- `HOME_MQTT_TLS_INSECURE=false`
+- `HOME_MQTT_CONTROL_TOPIC=zara/home/control`
+- `HOME_MQTT_STATUS_TOPIC=zara/home/status`
 
 Keep build/start commands:
 
@@ -196,7 +196,7 @@ Redeploy frontend after setting env variable.
 
 ### 4) Update ESP32 Firmware
 
-In `iot/esp32/zara_flight_controller.ino` set:
+In `iot/esp32/zara_home_automation_controller.ino` set:
 
 - `MQTT_HOST=<your-hivemq-host>`
 - `MQTT_PORT=8883`
@@ -209,13 +209,13 @@ If you have broker CA PEM, set `MQTT_ROOT_CA`; otherwise current code falls back
 ### 5) Verify End-to-End
 
 1. Open frontend: `https://zara-aura.vercel.app`
-2. Enable Flight Mode in UI.
+2. Enable Home Automation in UI.
 3. Say or type: `turn on lights`.
 4. Check backend status endpoint:
 
-   - `GET https://zara-the-ai-backend2.onrender.com/flight/status`
+   - `GET https://zara-the-ai-backend2.onrender.com/home/status`
 
 Expected:
 
 - `connected: true`
-- `last_status.status: led_on` after command
+- `last_status.status: light_on` after command
