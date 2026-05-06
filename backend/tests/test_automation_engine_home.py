@@ -1,0 +1,77 @@
+from __future__ import annotations
+
+import asyncio
+from dataclasses import dataclass
+
+from app.config import Settings
+from app.services.automation import AutomationEngine
+
+
+@dataclass
+class StubModeState:
+    enabled: bool
+
+    async def is_home_automation_enabled(self) -> bool:
+        return self.enabled
+
+
+class StubHomeController:
+    def __init__(self):
+        self.called_actions: list[str] = []
+
+    async def publish_action(self, action: str):
+        self.called_actions.append(action)
+        return {
+            "type": action,
+            "action": action,
+            "domain": "home",
+            "status": "executed",
+        }
+
+
+def test_detect_home_command_blocked_when_home_mode_disabled():
+    settings = Settings()
+    engine = AutomationEngine(
+        settings=settings,
+        mode_state=StubModeState(enabled=False),
+        home_controller=StubHomeController(),
+    )
+
+    result = asyncio.run(engine.detect_and_execute("turn on lights"))
+
+    assert result is not None
+    assert result["domain"] == "home"
+    assert result["status"] == "blocked_home_mode"
+
+
+def test_detect_home_command_executes_when_enabled():
+    settings = Settings()
+    controller = StubHomeController()
+    engine = AutomationEngine(
+        settings=settings,
+        mode_state=StubModeState(enabled=True),
+        home_controller=controller,
+    )
+
+    result = asyncio.run(engine.detect_and_execute("turn on fan"))
+
+    assert result is not None
+    assert result["domain"] == "home"
+    assert result["status"] == "executed"
+    assert controller.called_actions == ["fan_on"]
+
+
+def test_detect_scene_command_maps_to_scene_action():
+    settings = Settings()
+    controller = StubHomeController()
+    engine = AutomationEngine(
+        settings=settings,
+        mode_state=StubModeState(enabled=True),
+        home_controller=controller,
+    )
+
+    result = asyncio.run(engine.detect_and_execute("good night"))
+
+    assert result is not None
+    assert result["action"] == "scene_good_night"
+    assert controller.called_actions == ["scene_good_night"]

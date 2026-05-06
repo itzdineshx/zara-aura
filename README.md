@@ -3,7 +3,7 @@
 ZARA is a multi-mode voice-first AI platform built to evolve from a conversational assistant into a domain automation core. Right now the project focuses on two modes:
 
 - Default mode: normal conversational AI with voice input, multilingual replies, memory, and safe browser/system actions.
-- Flight Mode: drone automation control over MQTT for ESP32-based hardware.
+- Home Automation: smart device control over MQTT for ESP32-based hardware.
 
 The long-term architecture is intentionally reusable. Farm, home, and device automations are planned to follow the same Zara core with new domain-specific intent handlers and execution adapters.
 
@@ -12,7 +12,7 @@ The long-term architecture is intentionally reusable. Farm, home, and device aut
 - Captures voice or text from the frontend.
 - Detects language and user intent.
 - Routes normal conversation through online, smart, or offline AI models.
-- Executes safe automation such as browser actions, current time/date, and Flight Mode hardware commands.
+- Executes safe automation such as browser actions, current time/date, and home automation hardware commands.
 - Returns text, emotion, audio features, and action metadata to the UI.
 
 ## Mode Model
@@ -22,9 +22,9 @@ There are two different mode layers in the codebase:
 | Layer | Options | Purpose |
 | --- | --- | --- |
 | AI response mode | `online`, `smart`, `offline` | Chooses the language-model routing strategy for normal conversation. |
-| Product mode | Default conversational mode, Flight Mode, future domain modes | Chooses which domain ZARA should operate in. |
+| Product mode | Default conversational mode, Home Automation, future domain modes | Chooses which domain ZARA should operate in. |
 
-Default conversational mode uses the AI response router. Flight Mode is a separate hardware gate that allows voice commands to be published to the flight controller only when it is enabled.
+Default conversational mode uses the AI response router. Home Automation is a separate hardware gate that allows voice commands to be published to the flight controller only when it is enabled.
 
 ## Architecture Overview
 
@@ -32,7 +32,7 @@ Default conversational mode uses the AI response router. Flight Mode is a separa
 flowchart LR
 	User((User)) --> UI[React Frontend]
 	UI -->|/mode sync| ModeAPI[FastAPI /mode]
-	UI -->|/flight-mode sync| FlightAPI[FastAPI /flight-mode]
+	UI -->|/home-mode sync| FlightAPI[FastAPI /home-mode]
 	UI -->|/chat or /voice| API[FastAPI Backend]
 
 	API --> Lang[LanguageService]
@@ -54,15 +54,15 @@ flowchart LR
 	ESP32 --> MQTTBridge
 ```
 
-The important idea is simple: the frontend captures input and syncs mode state, the backend decides whether a request is conversation or automation, and the executor for Flight Mode is always MQTT.
+The important idea is simple: the frontend captures input and syncs mode state, the backend decides whether a request is conversation or automation, and the executor for Home Automation is always MQTT.
 
 ## Repository Layout
 
 - `src/`: Vite + React + TypeScript frontend.
 - `backend/`: FastAPI backend, mode state, AI routing, voice pipeline, TTS, and MQTT bridge.
-- `iot/esp32/`: ESP32 Arduino firmware for Flight Mode hardware control.
+- `iot/esp32/`: ESP32 Arduino firmware for Home Automation hardware control.
 - `deploy/`: production deployment files for Caddy, nginx, and Mosquitto.
-- `backend/FLIGHT_MODE_MQTT.md`: detailed Flight Mode protocol and safety notes.
+- `backend/HOME_AUTOMATION_MQTT.md`: detailed Home Automation protocol and safety notes.
 - `DEPLOYMENT_ONLINE.md`: VPS deployment guide.
 - `DEPLOYMENT_VERCEL_RENDER.md`: Vercel + Render deployment guide.
 
@@ -77,16 +77,16 @@ The important idea is simple: the frontend captures input and syncs mode state, 
 5. The backend returns the response text, language, emotion, audio features, and any action metadata.
 6. The frontend displays the answer and speaks it with backend TTS or browser speech synthesis.
 
-### 2) Flight Mode Flow
+### 2) Home Automation Flow
 
-1. The user enables Flight Mode in Settings.
-2. The frontend syncs the toggle to `POST /flight-mode`.
+1. The user enables Home Automation in Settings.
+2. The frontend syncs the toggle to `POST /home-mode`.
 3. The backend stores that state in `ModeState`.
 4. When a flight intent is detected, the automation engine maps it to a flight action such as `engine_on`, `servo_left`, or `throttle_up`.
-5. If Flight Mode is off, the backend blocks the command and returns a safe explanation.
-6. If Flight Mode is on, the backend publishes a JSON payload to `zara/flight/control` through MQTT.
-7. The ESP32 subscribes to the control topic, executes the hardware action, and publishes status updates to `zara/flight/status`.
-8. The backend exposes the broker state and latest status through `GET /flight/status`.
+5. If Home Automation is off, the backend blocks the command and returns a safe explanation.
+6. If Home Automation is on, the backend publishes a JSON payload to `zara/home/control` through MQTT.
+7. The ESP32 subscribes to the control topic, executes the hardware action, and publishes status updates to `zara/home/status`.
+8. The backend exposes the broker state and latest status through `GET /home/status`.
 
 ### 3) Voice Pipeline
 
@@ -104,7 +104,7 @@ The backend is organized around small services that each do one job:
 - `backend/app/main.py`: FastAPI app, route handlers, and service wiring.
 - `backend/app/config.py`: environment-driven settings.
 - `backend/app/schemas.py`: request and response models.
-- `backend/app/services/mode_state.py`: in-memory mode and Flight Mode state.
+- `backend/app/services/mode_state.py`: in-memory mode and Home Automation state.
 - `backend/app/services/language_service.py`: multilingual language detection.
 - `backend/app/services/audio_features.py`: lightweight audio feature extraction.
 - `backend/app/services/whisper_service.py`: lazy-loaded Faster-Whisper transcription.
@@ -112,7 +112,7 @@ The backend is organized around small services that each do one job:
 - `backend/app/services/memory.py`: short conversation history.
 - `backend/app/services/ai_router.py`: online, smart, and offline model routing.
 - `backend/app/services/automation.py`: safe browser, system, and flight intent detection.
-- `backend/app/services/mqtt_flight.py`: MQTT command publisher and status subscriber.
+- `backend/app/services/mqtt_home.py`: MQTT command publisher and status subscriber.
 - `backend/app/services/tts_service.py`: optional backend TTS.
 - `backend/app/services/mcp_service.py`: optional browser bridge for open-url style actions.
 
@@ -123,7 +123,7 @@ The UI is intentionally voice-first:
 - `src/pages/Index.tsx` orchestrates microphone capture, request sending, speaking responses, and continuous listening.
 - `src/components/Orb.tsx` renders the reactive visual orb.
 - `src/components/SettingsPanel.tsx` exposes AI, voice, mode, automation, memory, privacy, and advanced controls.
-- `src/lib/backend.ts` is the typed API client for `/mode`, `/flight-mode`, `/chat`, `/voice`, `/tts`, and `/health`.
+- `src/lib/zara-api.ts` is the typed API client for `/mode`, `/home-mode`, `/chat`, `/voice`, `/tts`, and `/health`.
 - `src/lib/settings.ts` stores the frontend settings model, including `responseMode`, `flightMode`, and voice behavior.
 
 ## API Reference
@@ -134,9 +134,9 @@ The UI is intentionally voice-first:
 | --- | --- | --- |
 | `GET` | `/health` | Health check. |
 | `POST` | `/mode` | Set the AI response mode to `online`, `smart`, or `offline`. |
-| `POST` | `/flight-mode` | Enable or disable Flight Mode. |
-| `GET` | `/flight-mode` | Read the current Flight Mode state. |
-| `GET` | `/flight/status` | Read MQTT connection info and last ESP32 status. |
+| `POST` | `/home-mode` | Enable or disable Home Automation. |
+| `GET` | `/home-mode` | Read the current Home Automation state. |
+| `GET` | `/home/status` | Read MQTT connection info and last ESP32 status. |
 
 ### AI and Voice
 
@@ -166,11 +166,11 @@ Chat and voice responses share the same structure:
 
 Voice responses also include `transcript`.
 
-Flight actions use the `action` field to describe what was detected and whether it was planned, executed, blocked, or failed. When Flight Mode is off, the backend returns a safe blocked state instead of publishing hardware commands.
+Flight actions use the `action` field to describe what was detected and whether it was planned, executed, blocked, or failed. When Home Automation is off, the backend returns a safe blocked state instead of publishing hardware commands.
 
-## Flight Mode Details
+## Home Automation Details
 
-Flight Mode is the current hardware control domain and the best example of how future modes should work.
+Home Automation is the current hardware control domain and the best example of how future modes should work.
 
 ### Supported Flight Actions
 
@@ -191,8 +191,8 @@ Flight Mode is the current hardware control domain and the best example of how f
 
 ### MQTT Topics
 
-- Control: `zara/flight/control`
-- Status: `zara/flight/status`
+- Control: `zara/home/control`
+- Status: `zara/home/status`
 
 ### Example MQTT Payload
 
@@ -207,14 +207,14 @@ Flight Mode is the current hardware control domain and the best example of how f
 
 ### Safety Rules
 
-- Flight commands are blocked until Flight Mode is enabled.
+- Flight commands are blocked until Home Automation is enabled.
 - Servo angles are clamped to `0..180`.
 - Throttle values are clamped to the configured min/max.
 - `emergency_stop` resets the engine state and throttle to the minimum.
 - MQTT publish retries are built in.
 - The backend does not execute arbitrary shell commands for automation.
 
-Detailed protocol notes live in `backend/FLIGHT_MODE_MQTT.md`.
+Detailed protocol notes live in `backend/HOME_AUTOMATION_MQTT.md`.
 
 ## Default Conversational Mode
 
@@ -313,16 +313,16 @@ The main configuration lives in `backend/.env.example`. Key settings are grouped
 - `CACHE_MAX_ENTRIES`: cache size.
 - `MEMORY_LIMIT`: number of short conversation turns to keep.
 
-### Flight Mode and MQTT
+### Home Automation and MQTT
 
-- `FLIGHT_MODE_DEFAULT`: whether Flight Mode starts enabled.
-- `FLIGHT_MQTT_ENABLED`: master switch for the MQTT bridge.
-- `FLIGHT_MQTT_HOST`, `FLIGHT_MQTT_PORT`: broker connection.
-- `FLIGHT_MQTT_USERNAME`, `FLIGHT_MQTT_PASSWORD`: broker credentials.
-- `FLIGHT_MQTT_TLS_ENABLED`, `FLIGHT_MQTT_TLS_INSECURE`: TLS settings.
-- `FLIGHT_MQTT_CONTROL_TOPIC`, `FLIGHT_MQTT_STATUS_TOPIC`: topics used by backend and ESP32.
-- `FLIGHT_SERVO_LEFT_ANGLE`, `FLIGHT_SERVO_RIGHT_ANGLE`: default servo values.
-- `FLIGHT_THROTTLE_STEP`, `FLIGHT_THROTTLE_MIN`, `FLIGHT_THROTTLE_MAX`: throttle tuning.
+- `HOME_MODE_DEFAULT`: whether Home Automation starts enabled.
+- `HOME_MQTT_ENABLED`: master switch for the MQTT bridge.
+- `HOME_MQTT_HOST`, `HOME_MQTT_PORT`: broker connection.
+- `HOME_MQTT_USERNAME`, `HOME_MQTT_PASSWORD`: broker credentials.
+- `HOME_MQTT_TLS_ENABLED`, `HOME_MQTT_TLS_INSECURE`: TLS settings.
+- `HOME_MQTT_CONTROL_TOPIC`, `HOME_MQTT_STATUS_TOPIC`: topics used by backend and ESP32.
+- `HOME_SERVO_LEFT_ANGLE`, `HOME_SERVO_RIGHT_ANGLE`: default servo values.
+- `HOME_THROTTLE_STEP`, `HOME_THROTTLE_MIN`, `HOME_THROTTLE_MAX`: throttle tuning.
 
 ### Automation and Browser Bridge
 
@@ -365,24 +365,26 @@ docker run --env-file backend/.env -p 8000:8000 zara-backend
 
 ## Hardware and ESP32
 
-The ESP32 firmware lives in `iot/esp32/zara_flight_controller.ino`.
+The ESP32 firmware lives in `iot/esp32/zara_home_automation_controller.ino`.
+
+For complete device automation flows (lights, fan, AC, TV, curtains, and door lock), use `iot/esp32/zara_home_automation_full.ino`.
 
 It is responsible for:
 
 - Connecting to Wi-Fi.
 - Connecting to the MQTT broker.
-- Subscribing to `zara/flight/control`.
+- Subscribing to `zara/home/control`.
 - Executing LED, servo, engine, and throttle actions.
-- Publishing JSON status updates to `zara/flight/status`.
+- Publishing JSON status updates to `zara/home/status`.
 
-Required firmware libraries are documented in `backend/FLIGHT_MODE_MQTT.md`.
+Required firmware libraries are documented in `backend/HOME_AUTOMATION_MQTT.md`.
 
 ## Key Files To Read Next
 
 - `backend/app/main.py`
 - `backend/app/services/automation.py`
 - `backend/app/services/ai_router.py`
-- `backend/FLIGHT_MODE_MQTT.md`
+- `backend/HOME_AUTOMATION_MQTT.md`
 - `DEPLOYMENT_ONLINE.md`
 - `DEPLOYMENT_VERCEL_RENDER.md`
 
@@ -391,8 +393,9 @@ Required firmware libraries are documented in `backend/FLIGHT_MODE_MQTT.md`.
 ZARA is not just a chatbot. It is a reusable assistant core with:
 
 - a conversational default mode,
-- a drone Flight Mode over MQTT,
+- a drone Home Automation over MQTT,
 - a clear path to more automation domains,
 - and a backend/frontend split that keeps the system easy to extend.
 
 That is the main design goal of the repository.
+

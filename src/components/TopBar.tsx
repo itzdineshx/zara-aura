@@ -5,7 +5,7 @@ import type { PresenceMode, ResponseMode } from "@/lib/settings";
 interface TopBarProps {
   mode: ResponseMode;
   presence: PresenceMode;
-  flightMode?: boolean;
+  homeAutomation?: boolean;
   continuousLoop?: boolean;
   onOpenSettings: () => void;
 }
@@ -21,7 +21,7 @@ const presenceLabel: Record<PresenceMode, string> = {
   physical: "Physical",
 };
 
-const TopBar = ({ mode, presence, flightMode = false, continuousLoop = false, onOpenSettings }: TopBarProps) => {
+const TopBar = ({ mode, presence, homeAutomation = false, continuousLoop = false, onOpenSettings }: TopBarProps) => {
   return (
     <div className="fixed left-0 right-0 top-0 z-20 flex items-center justify-between px-5 py-4 sm:px-7">
       <span className="text-[11px] font-light uppercase tracking-[0.32em] text-white/58">ZARA</span>
@@ -33,9 +33,9 @@ const TopBar = ({ mode, presence, flightMode = false, continuousLoop = false, on
         <span className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[10px] font-light uppercase tracking-[0.18em] text-white/55">
           {presenceLabel[presence]}
         </span>
-        {flightMode ? (
+        {homeAutomation ? (
           <span className="rounded-full border border-amber-300/40 bg-amber-300/12 px-3 py-1 text-[10px] font-light uppercase tracking-[0.18em] text-amber-100/90">
-            Flight
+            Home
           </span>
         ) : null}
         {continuousLoop ? (

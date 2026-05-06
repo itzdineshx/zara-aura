@@ -1,11 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import Orb from "@/components/Orb";
-import MicButton from "@/components/MicButton";
+import ZaraCore from "@/components/ZaraCore";
+import VoiceController from "@/components/VoiceController";
+import ResponseDisplay from "@/components/ResponseDisplay";
+import ModeToggle from "@/components/ModeToggle";
+import DeviceControlPanel from "@/components/DeviceControlPanel";
 import SettingsPanel from "@/components/SettingsPanel";
 import TopBar from "@/components/TopBar";
 import { defaultSettings, orbPaletteHues, type VoicePersona, type ZaraSettings } from "@/lib/settings";
-import { fetchTtsAudio, sendVoiceChunk, syncBackendFlightMode, syncBackendMode, type BackendAction, type BackendEmotion } from "@/lib/backend";
+import {
+  checkHealth,
+  processVoice,
+  setMode,
+  setHomeAutomationEnabled,
+  generateSpeech,
+  sendChat,
+  executeHomeAction,
+  type BackendAction,
+  type BackendEmotion,
+  type HomeStatusResponse,
+} from "@/lib/zara-api";
 
 type OrbState = "idle" | "listening" | "thinking" | "speaking";
 
@@ -545,7 +559,7 @@ const Index = () => {
 
   const playBackendTts = useCallback(async (text: string, languageCode: SupportedLanguageCode): Promise<boolean> => {
     try {
-      const audioBlob = await fetchTtsAudio(text, languageCode);
+      const audioBlob = await generateSpeech(text, languageCode);
       if (!audioBlob.size) {
         return false;
       }
@@ -643,6 +657,7 @@ const Index = () => {
 
       try {
         const response = await sendVoiceChunk(audioChunk, settings.ai.responseMode, settings.voice.language);
+          const response = await processVoice(audioChunk, settings.ai.responseMode, settings.voice.language);
         if (!mountedRef.current) return;
 
         setAssistantText(response.text);
@@ -778,7 +793,7 @@ const Index = () => {
 
   useEffect(() => {
     let active = true;
-    syncBackendMode(settings.ai.responseMode).catch((error) => {
+    setMode(settings.ai.responseMode).catch((error) => {
       if (!active) return;
       const message = error instanceof Error ? error.message : "Unable to sync AI mode";
       setRuntimeHint(message);
@@ -791,16 +806,36 @@ const Index = () => {
 
   useEffect(() => {
     let active = true;
-    syncBackendFlightMode(settings.mode.flightMode).catch((error) => {
+    setHomeAutomationEnabled(settings.mode.homeAutomation).catch((error) => {
       if (!active) return;
-      const message = error instanceof Error ? error.message : "Unable to sync Flight Mode";
+      const message = error instanceof Error ? error.message : "Unable to sync Home Automation mode";
       setRuntimeHint(message);
     });
 
     return () => {
       active = false;
     };
-  }, [settings.mode.flightMode]);
+  }, [settings.mode.homeAutomation]);
+
+  // Check backend health on mount
+  useEffect(() => {
+    let active = true;
+    checkHealth()
+      .then(() => {
+        if (active && mountedRef.current) {
+          console.log("Backend health check passed");
+        }
+      })
+      .catch((error) => {
+        if (!active) return;
+        const message = error instanceof Error ? error.message : "Backend health check failed";
+        console.warn("Backend health check:", message);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const messages = useMemo(() => {
     if (orbState === "listening") {
@@ -906,7 +941,7 @@ const Index = () => {
       <TopBar
         mode={settings.ai.responseMode}
         presence={settings.mode.presence}
-        flightMode={settings.mode.flightMode}
+        homeAutomation={settings.mode.homeAutomation}
         continuousLoop={settings.ai.continuousLoop}
         onOpenSettings={() => setSettingsOpen(true)}
       />
@@ -917,39 +952,25 @@ const Index = () => {
         animate={settingsOpen ? { opacity: 0.55, scale: 1.12, x: -30 } : { opacity: 1, scale: 1.24, x: 0 }}
         transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
       >
-        <Orb state={orbState} audioStream={audioStream} visuals={orbVisuals} />
+        <ZaraCore state={orbState} audioStream={audioStream} visuals={orbVisuals} title={assistantText} subtitle={runtimeHint || undefined} />
       </motion.div>
 
       {/* Text */}
-      <div className="absolute bottom-32 z-10 flex flex-col items-center gap-2 px-6 text-center">
-        <AnimatePresence mode="wait">
-          <motion.p
-            key={messages}
-            className="text-sm font-light text-foreground/90 tracking-wide"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.5, ease: "easeOut" }}
-          >
-            {messages}
-          </motion.p>
-        </AnimatePresence>
-        {subtext && (
-          <motion.p
-            className="text-xs font-thin text-muted-foreground/50"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3, duration: 0.5 }}
-          >
-            {subtext}
-          </motion.p>
-        )}
-      </div>
+      <ResponseDisplay text={messages} subtext={subtext} />
 
       {/* Mic */}
-      <div className="absolute bottom-12 z-10">
-        <MicButton isActive={orbState === "listening"} onToggle={handleMicToggle} accentHue={orbVisuals.hue} />
-      </div>
+      <VoiceController orbState={orbState} onToggle={handleMicToggle} accentHue={orbVisuals.hue} />
+
+      <ModeToggle
+        mode={settings.ai.responseMode}
+        continuousLoop={settings.ai.continuousLoop}
+        onSetMode={(m) => setSettings((prev) => ({ ...prev, ai: { ...prev.ai, responseMode: m } }))}
+        onToggleLoop={() => setSettings((prev) => ({ ...prev, ai: { ...prev.ai, continuousLoop: !prev.ai.continuousLoop } }))}
+      />
+
+      <DeviceControlPanel
+        onStatusChange={(message) => setRuntimeHint(message)}
+      />
 
       <SettingsPanel
         open={settingsOpen}

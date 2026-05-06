@@ -16,23 +16,23 @@ services:
         value: 1
       - key: TTS_ENABLED
         value: false
-      - key: FLIGHT_MODE_DEFAULT
+      - key: HOME_AUTOMATION_DEFAULT
         value: false
-      - key: FLIGHT_MQTT_ENABLED
+      - key: HOME_MQTT_ENABLED
         value: true
       - key: OPENROUTER_API_KEY
         sync: false
       - key: CORS_ORIGINS
         sync: false
-      - key: FLIGHT_MQTT_HOST
+      - key: HOME_MQTT_HOST
         sync: false
-      - key: FLIGHT_MQTT_PORT
+      - key: HOME_MQTT_PORT
         sync: false
-      - key: FLIGHT_MQTT_USERNAME
+      - key: HOME_MQTT_USERNAME
         sync: false
-      - key: FLIGHT_MQTT_PASSWORD
+      - key: HOME_MQTT_PASSWORD
         sync: false
-      - key: FLIGHT_MQTT_TLS_ENABLED
+      - key: HOME_MQTT_TLS_ENABLED
         value: true
-      - key: FLIGHT_MQTT_TLS_INSECURE
+      - key: HOME_MQTT_TLS_INSECURE
         value: false

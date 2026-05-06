@@ -1,12 +1,12 @@
-# ZARA AI Online Hosting (Frontend + Backend + Flight Mode)
+# ZARA AI Online Hosting (Frontend + Backend + Home Automation)
 
-This guide deploys ZARA AI to a VPS with HTTPS and online Flight Mode control.
+This guide deploys ZARA AI to a VPS with HTTPS and online home automation control.
 
 ## What You Get
 
 - Public frontend over HTTPS
 - Public backend API over HTTPS
-- MQTT bridge from backend to ESP32 for Flight Mode commands
+- MQTT bridge from backend to ESP32 for home automation commands
 - Optional self-hosted Mosquitto broker
 
 ## 1) Prerequisites
@@ -33,7 +33,7 @@ Edit `deploy/.env.online`:
 - Set `API_DOMAIN`
 - Set `VITE_BACKEND_URL`
 - Set `CORS_ORIGINS`
-- Set MQTT values (`FLIGHT_MQTT_*`)
+- Set MQTT values (`HOME_MQTT_*`)
 
 Edit `backend/.env`:
 
@@ -46,12 +46,12 @@ Use a managed broker (for example HiveMQ Cloud) so both backend and ESP32 can co
 
 In `deploy/.env.online`:
 
-- `FLIGHT_MQTT_HOST=<your-cloud-broker-host>`
-- `FLIGHT_MQTT_PORT=8883`
-- `FLIGHT_MQTT_USERNAME=<broker-username>`
-- `FLIGHT_MQTT_PASSWORD=<broker-password>`
-- `FLIGHT_MQTT_TLS_ENABLED=true`
-- `FLIGHT_MQTT_TLS_INSECURE=false`
+- `HOME_MQTT_HOST=<your-cloud-broker-host>`
+- `HOME_MQTT_PORT=8883`
+- `HOME_MQTT_USERNAME=<broker-username>`
+- `HOME_MQTT_PASSWORD=<broker-password>`
+- `HOME_MQTT_TLS_ENABLED=true`
+- `HOME_MQTT_TLS_INSECURE=false`
 
 Start stack:
 
@@ -69,11 +69,11 @@ docker run --rm -it -v "$(pwd)/deploy/mosquitto:/mosquitto" eclipse-mosquitto:2 
 
 Set in `deploy/.env.online`:
 
-- `FLIGHT_MQTT_HOST=mosquitto`
-- `FLIGHT_MQTT_PORT=1883`
-- `FLIGHT_MQTT_USERNAME=zara`
-- `FLIGHT_MQTT_PASSWORD=<same-password-you-entered>`
-- `FLIGHT_MQTT_TLS_ENABLED=false`
+- `HOME_MQTT_HOST=mosquitto`
+- `HOME_MQTT_PORT=1883`
+- `HOME_MQTT_USERNAME=zara`
+- `HOME_MQTT_PASSWORD=<same-password-you-entered>`
+- `HOME_MQTT_TLS_ENABLED=false`
 
 Start stack with MQTT profile:
 
@@ -90,7 +90,7 @@ Create these DNS A records pointing to your VPS public IP:
 
 Caddy will automatically issue and renew TLS certificates.
 
-## 6) ESP32 Online Flight Mode Settings
+## 6) ESP32 Online Home Automation Settings
 
 Update your firmware MQTT constants to match the broker you selected:
 
@@ -101,8 +101,8 @@ Update your firmware MQTT constants to match the broker you selected:
 
 Keep topic names consistent with backend env:
 
-- `zara/flight/control`
-- `zara/flight/status`
+- `zara/home/control`
+- `zara/home/status`
 
 For managed TLS brokers, use `WiFiClientSecure` in the ESP32 sketch and load the broker CA certificate.
 
@@ -120,15 +120,15 @@ Backend health:
 curl https://api.zara.example.com/health
 ```
 
-Flight mode status:
+Home automation status:
 
 ```bash
-curl https://api.zara.example.com/flight/status
+curl https://api.zara.example.com/home/status
 ```
 
 ## 8) Safety Recommendations (Important)
 
-- Keep Flight Mode default off (`FLIGHT_MODE_DEFAULT=false`).
+- Keep home automation default off (`HOME_AUTOMATION_DEFAULT=false`).
 - Use strong MQTT credentials and rotate periodically.
 - Prefer TLS MQTT for internet control.
 - Never arm engine at boot on an attached propeller.

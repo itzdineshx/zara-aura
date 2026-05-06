@@ -56,17 +56,17 @@ class ModeResponse(BaseModel):
     mode: ModeLiteral
 
 
-class FlightModeRequest(BaseModel):
+class HomeModeRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool
 
 
-class FlightModeResponse(BaseModel):
+class HomeModeResponse(BaseModel):
     enabled: bool
 
 
-class FlightStatusResponse(BaseModel):
+class HomeStatusResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     connected: bool
